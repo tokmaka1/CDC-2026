@@ -7,6 +7,7 @@ import torch
 import numpy as np
 import gpytorch
 import matplotlib.pyplot as plt
+import tikzplotlib
 
 class ground_truth():
     def __init__(self, num_center_points, X_plot, RKHS_norm):
@@ -42,8 +43,8 @@ if __name__ == '__main__':
     RKHS_norm = 1
     X_plot = compute_X_plot(n_dimensions=1, points_per_axis=1000)
     gt = ground_truth(num_center_points=500, X_plot=X_plot, RKHS_norm=RKHS_norm)
-    m_RKHS_functions = 250
-    iterations = 10
+    m_RKHS_functions = 100
+    iterations = 5
     alpha_bar = 0.1
     nugget_factor = 1e-6
     kernel = gt.kernel
@@ -100,17 +101,23 @@ if __name__ == '__main__':
         y = gt.conduct_experiment(x)
         x_interpol = torch.cat((x_interpol, x), dim=0)  # torch.cat((x_interpol, x.unsqueeze(0)), dim=0)
         y_interpol = torch.cat((y_interpol, y), dim=0)
-        plt.figure()
-        for i in range(m_RKHS_functions):
-            plt.plot(X_plot, tensor_random_RKHS_functions[i, :].detach().numpy(), 'magenta', alpha=0.15)
-        plt.fill_between(X_plot.flatten().detach().numpy(), interpolating_function_lb_AISTATS.flatten().detach().numpy(), interpolating_function_ub_AISTATS.flatten().detach().numpy(), alpha=0.1, label='Kernel interpolation AISTATS')  # , 'gray', alpha=0.2)
-        plt.fill_between(X_plot.flatten().detach().numpy(), lb.detach().numpy(), ub.detach().numpy(), alpha=0.2, label='Scenario bounds')  # , 'gray', alpha=0.2
-        plt.fill_between(X_plot.flatten().detach().numpy(), interpolating_function_lb.flatten().detach().numpy(), interpolating_function_ub.flatten().detach().numpy(), alpha=0.3, label='Kernel interpolation bounds')  # , 'gray', alpha=0.2)
-        plt.plot(X_plot, gt.conduct_experiment(X_plot), '-b', label='Ground truth')
-        plt.plot(X_plot, interpolating_function.detach().numpy(), '-g', label='Interpolation')
-        plt.legend()
-        plt.savefig('bound_comparison_pre_RKHS.png')
-        plt.show()
+    plt.figure()
+    for i in range(m_RKHS_functions):
+        if True:
+            plt.plot(X_plot[::25], tensor_random_RKHS_functions[i, :].detach().numpy()[::25], 'magenta', alpha=0.05)
+    plt.fill_between(X_plot.flatten().detach().numpy()[::25], interpolating_function_lb_AISTATS.flatten().detach().numpy()[::25],
+                      interpolating_function_ub_AISTATS.flatten().detach().numpy()[::25],
+                      alpha=0.1, label='Kernel interpolation AISTATS')  # , 'gray', alpha=0.2)
+    plt.fill_between(X_plot.flatten().detach().numpy()[::25], lb.detach().numpy()[::25], ub.detach().numpy()[::25], alpha=0.2, label='Scenario bounds')  # , 'gray', alpha=0.2
+    # plt.fill_between(X_plot.flatten().detach().numpy(), interpolating_function_lb.flatten().detach().numpy(), interpolating_function_ub.flatten().detach().numpy(), alpha=0.3, label='Kernel interpolation bounds')  # , 'gray', alpha=0.2)
+    plt.plot(X_plot[::25], gt.conduct_experiment(X_plot[::25]), '-b', label='Ground truth')
+    plt.plot(X_plot[::25], interpolating_function.detach().numpy()[::25], '-g', label='Interpolation')
+    # plt.legend()
+    # plt.savefig('bound_comparison_pre_RKHS.png')
+    # tikzplotlib.save("AISTATS_scenario.tex", float_format="%.3f")
+    # tikzplotlib.save("AISTATS_scenario.tex", float_format=".3f")
+    tikzplotlib.save("AISTATS_scenario.tex")
+    #plt.show()
 
 
 
