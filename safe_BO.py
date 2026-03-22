@@ -115,13 +115,34 @@ def update_noise_tensor(kappa_confidence, gamma_confidence, t, R, cube, x):
 
 
 
-def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=False, title=""):
+def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=False, title="", t=None):
     safety_threshold = cube.safety_threshold
     X_plot = cube.discr_domain.detach().numpy()
     X_sample = cube.x_sample.detach().numpy()
     Y_sample = cube.y_sample.detach().numpy()
     ucb = cube.ucb.detach().numpy()
     lcb = cube.lcb.detach().numpy()
+    # Support both torch and numpy storage for the safe set indices/mask.
+    if hasattr(cube.S, "detach"):
+        safe_set = cube.S.detach().cpu().numpy()
+    else:
+        safe_set = np.asarray(cube.S)
+
+    safe_set = np.asarray(safe_set)
+    if safe_set.dtype == np.bool_:
+        safe_idx = np.where(safe_set)[0]
+    else:
+        safe_idx = safe_set.astype(int).reshape(-1)
+
+    if safe_idx.size > 0:
+        best_safe_idx = safe_idx[np.argmax(lcb[safe_idx])]
+        best_safe_x = X_plot[best_safe_idx]
+        best_safe_x_tensor = cube.discr_domain[best_safe_idx].unsqueeze(0)
+        best_safe_gt = gt.f(best_safe_x_tensor).detach().cpu().numpy().reshape(-1)[0]
+    else:
+        best_safe_x = None
+        best_safe_gt = None
+
     # Ensure gt.fX is a NumPy array for plotting
     if hasattr(gt.fX, "detach"):
         gt_fX = gt.fX.detach().numpy()
@@ -136,7 +157,6 @@ def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=Fal
                 plt.plot(X_plot, tensor_random_functions[support[i], :].detach().numpy(), 'gray', alpha=0.1)
         plt.plot(X_plot, gt_fX, color='blue')
         plt.scatter(X_sample[1:], Y_sample[1:], color='black')
-        # plt.scatter(X_plot[np.argmax(ucb[cube.S])], np.max(cube.ucb[cube.S]), color='black'); plot maximum
         failures = gt.f(cube.x_sample) < safety_threshold
         if sum(failures) > 0:
             plt.plot(X_sample[failures], Y_sample[failures], 'xr', markersize=25, markeredgewidth=3)
@@ -145,11 +165,13 @@ def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=Fal
         plt.fill_between(X_plot.flatten(), lcb, ucb, color="gray", alpha=0.2)
         plt.plot(X_plot, lcb, 'gray', label="lb, ub")
         plt.plot(X_plot, ucb, 'gray')
+        if best_safe_x is not None and t != 1:
+            plt.plot(best_safe_x, best_safe_gt, marker='*', color='cyan', markersize=18, linestyle='None')
         plt.xlabel('$a$')
         plt.ylabel('$y$')
         plt.show()
     elif save:
-        step = 5
+        step = 8  # Plot every 8th point to reduce file size; adjust as needed
         plt.figure()
         if plot_support:
                 for i in range(1, len(support)):
@@ -164,6 +186,8 @@ def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=Fal
         plt.plot(X_sample[0], Y_sample[0], 'd', color='magenta', markersize=10)
         plt.plot(X_plot[::step], lcb[::step], 'gray', label="lb, ub")
         plt.plot(X_plot[::step], ucb[::step], 'gray')
+        if best_safe_x is not None and t != 1:
+            plt.plot(best_safe_x, best_safe_gt, marker='*', color='cyan', markersize=18, linestyle='None')
 
         plt.fill_between(X_plot[::step].flatten(), lcb[::step], ucb[::step], color="gray", alpha=0.2)
         tikzplotlib.save(title)
@@ -171,7 +195,7 @@ def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=Fal
 
 
 if __name__ == '__main__':
-        introductory_example = False  # Section 4; toy example to compare classic scenario theory with wait and judge
+        introductory_example = True  # Section 4; toy example to compare classic scenario theory with wait and judge
         noise_type = "uniform"  # Student-t, Gaussian, uniform, heteroscedastic
         iterations = 30
         eta = 1e-4
@@ -187,7 +211,7 @@ if __name__ == '__main__':
         gamma_confidence = 0.1  
         exploration_threshold = 0.1  #  0.2
         lengthscale = 0.1
-        Gaussian_std = 0.01
+        Gaussian_std = 1e-2  # 
         RKHS_norm = 1
         beta_list = []
         beta_list_ours = []
@@ -217,7 +241,8 @@ if __name__ == '__main__':
                 update_model(cube, lb, ub)
                 compute_sets(cube)
                 if t == 1:
-                    plot(cube, gt, tensor_random_functions, support, plot_support=True, save=True, title="numerical_example_beginning.tex") 
+                    pass
+                    # plot(cube, gt, tensor_random_functions, support, plot_support=True, save=True, title="numerical_example_beginning.tex") 
                 x_new = acquisition_function(cube=cube)
                 if x_new != None:
                     y_new = torch.tensor(gt.conduct_experiment(x=x_new), dtype=torch.float32)
@@ -229,9 +254,14 @@ if __name__ == '__main__':
                 cube.x_sample = X_sample
                 cube.y_sample = Y_sample
                 list_cubes.append(cube)
-            plot(cube, gt, tensor_random_functions, support, plot_support=True, save=False, title="numerical_example_end.tex") 
+            plot(cube, gt, tensor_random_functions, support, plot_support=True, save=True, title="numerical_example_end.tex", t=t) 
 
         elif introductory_example:
+                step = 5
+                # idx_init = torch.linspace(0, 20, steps=10, dtype=torch.long)
+                # X_sample = X_plot[idx_init].clone()
+                # Y_sample = torch.as_tensor(gt.f(X_sample), dtype=torch.float32)
+
                 lb, ub, argmin, argmax, tensor_random_functions, support = create_random_functions(
                     coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample,
                     Y_sample, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=1)
@@ -239,28 +269,27 @@ if __name__ == '__main__':
                 coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample, Y_sample, gamma_confidence, kappa_confidence, wj=False, noise_type=noise_type, R=R, t=1)                
 
                 # Plots
-                step = 5
+
                 # First: wait and judge plot
                 plt.figure()
                 for i in range(len(support)):
                     plt.plot(X_plot[::step], tensor_random_functions[support[i], :].detach().numpy()[::step], 'gray', alpha=0.1)
                 plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb.detach().numpy()[::step], ub.detach().numpy()[::step], color="gray", alpha=0.2)
-                plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=100, label='Samples')
                 plt.plot(X_plot[::step], lb.detach().numpy()[::step], 'gray', label="lb, ub")
                 plt.plot(X_plot[::step], ub.detach().numpy()[::step], 'gray')
                 plt.plot(X_plot[::step], gt.fX.detach().numpy()[::step], 'blue', label="Truth")
+                plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=200, label='Samples')
                 plt.title("Wait and judge bounds")
 
-                # Second: scenario approach plot with plotting supports
                 plt.figure()
-                for i in range(len(support_scenario)):
-                    plt.plot(X_plot[::step], tensor_random_functions_scenario[support_scenario[i], :].detach().numpy()[::step], 'gray', alpha=0.1)
-                plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb_scenario.detach().numpy()[::step], ub_scenario.detach().numpy()[::step], color="gray", alpha=0.2)
-                plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=100, label='Samples')
-                plt.plot(X_plot[::step], lb_scenario.detach().numpy()[::step], 'gray', label="lb, ub")
-                plt.plot(X_plot[::step], ub_scenario.detach().numpy()[::step], 'gray')
-                plt.plot(X_plot[::step], gt.fX.detach().numpy()[::step], 'blue', label="Truth")
-                plt.title("Scneario approach (only support)")                
+                # for i in range(len(support_scenario)):
+                #     plt.plot(X_plot[::step], tensor_random_functions_scenario[support_scenario[i], :].detach().numpy()[::step], 'orange', alpha=0.1)
+                plt.fill_between(X_plot.flatten().detach().numpy(), lb_scenario.detach().numpy(), ub_scenario.detach().numpy(), color="orange", alpha=0.2)
+                plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=50, label='Samples')
+                plt.plot(X_plot, lb_scenario.detach().numpy(), 'orange', label="lb, ub")
+                plt.plot(X_plot, ub_scenario.detach().numpy(), 'orange')
+                plt.plot(X_plot, gt.fX.detach().numpy(), 'blue', label="Truth")
+                tikzplotlib.save("scenario_apprach_toy.tex")               
                 
                 plt.figure()
                 for i in range(tensor_random_functions_scenario.shape[0]):
@@ -275,11 +304,14 @@ if __name__ == '__main__':
 
                 # Compare the bounds
                 plt.figure()
+                for i in range(len(support)):
+                    plt.plot(X_plot[::step], tensor_random_functions[support[i], :].detach().numpy()[::step], 'gray', alpha=0.1)
                 plt.plot(X_plot[::step], gt.fX.detach().numpy()[::step], 'blue', label="Truth")
                 plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=100, label='Samples')
-                plt.plot(X_plot[::step], lb_scenario.detach().numpy()[::step], 'gray', label="lb, ub scenario")
-                plt.plot(X_plot[::step], ub_scenario.detach().numpy()[::step], 'gray')
-                plt.plot(X_plot[::step], lb.detach().numpy()[::step], 'magenta', label="lb, ub wait and judge")
-                plt.plot(X_plot[::step], ub.detach().numpy()[::step], 'magenta')
-                plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb_scenario.detach().numpy()[::step], ub_scenario.detach().numpy()[::step], color="gray", alpha=0.1)
-                plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb.detach().numpy()[::step], ub.detach().numpy()[::step], color="magenta", alpha=0.2)
+                plt.plot(X_plot[::step], lb_scenario.detach().numpy()[::step], 'orange', label="lb, ub scenario")
+                plt.plot(X_plot[::step], ub_scenario.detach().numpy()[::step], 'orange')
+                plt.plot(X_plot[::step], lb.detach().numpy()[::step], 'gray', label="lb, ub wait and judge")
+                plt.plot(X_plot[::step], ub.detach().numpy()[::step], 'gray')
+                plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb_scenario.detach().numpy()[::step], ub_scenario.detach().numpy()[::step], color="orange", alpha=0.1)
+                plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb.detach().numpy()[::step], ub.detach().numpy()[::step], color="gray", alpha=0.3)
+                tikzplotlib.save("bounds_comparison_toy.tex")

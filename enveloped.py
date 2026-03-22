@@ -80,7 +80,7 @@ def bspline_basis_repeated(x, N, M=15, degree=3):
 
     return Phi  # shape: (len(x), N)
 
-def fourier_basis_repeated(x, N, M=15):
+def fourier_basis_repeated(x, N, M=100):
     """Create M Fourier basis functions and repeat them to fill N dimensions."""
     x = x.view(-1)
     cols = [torch.ones_like(x)]
@@ -105,6 +105,7 @@ def fourier_basis_repeated(x, N, M=15):
 
 def haar_wavelet(n, x):
     """Evaluate the n-th Haar wavelet at points x ∈ [0,1]."""
+    x = x.reshape(-1)
     if n == 0:
         return torch.ones_like(x)
 
@@ -116,14 +117,13 @@ def haar_wavelet(n, x):
     end = start + width
 
     h = torch.zeros_like(x)
-    h = h.squeeze()  # remove any [1000, 1] shape
     h[(x >= start) & (x < mid)] = 1.0
     h[(x >= mid) & (x < end)] = -1.0
     return h * (2**(k / 2))
 
 def generate_haar_basis(x, N):
     """Return a [len(x) x N] matrix of Haar basis functions evaluated at x."""
-    x = x.squeeze()  # ensure 1D input
+    x = x.reshape(-1)  # keep singletons as length-1 vectors
     basis = [haar_wavelet(n, x) for n in range(N)]  # list of 1D tensors
     return torch.stack(basis, dim=1)  # shape [len(x), N]
 
@@ -216,23 +216,29 @@ class ground_truth():
         self.kernel = kernel
         self.lengthscale = lengthscale
 
-        # Sample coefficients xi
-        M = 15 if basis_functions == "Fourier" else None  # Use M=15 for repeated Fourier basis
-        xi = generate_coefficients(coeff_distribution, N, Gaussian_std=Gaussian_std, M=M)
-        self.xi = xi
-
         # Build the basis matrix for X_plot
         if basis_functions == "Haar":
             ONB = generate_haar_basis(X_plot, N)
         elif basis_functions == "BSpline":
             ONB = bspline_basis_repeated(X_plot, N, degree=3)
         elif basis_functions == "Fourier":
-            ONB = fourier_basis_repeated(X_plot, N, M=1000)
+            ONB = fourier_basis_repeated(X_plot, N)
         elif basis_functions == "RKHS":
             K = kernel(X_plot, X_plot).to_dense()
             ONB = K
         else:
             raise ValueError(f"Unknown basis_functions: {basis_functions}")
+
+        # Sample coefficients xi the same way as in create_random_functions
+        if coeff_distribution == "Gaussian":
+            xi = torch.randn(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) * Gaussian_std
+        elif coeff_distribution == "Fourier_decay":
+            k = torch.arange(1, ONB.shape[1] + 1, dtype=ONB.dtype, device=ONB.device)
+            decay = 1.0 / (k**2)
+            xi = torch.randn(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) * decay * Gaussian_std
+        else:
+            raise ValueError(f"Unknown coeff_distribution: {coeff_distribution}")
+        self.xi = xi
 
         # Compute fX for plotting
         self.fX = (ONB * xi).sum(dim=1)
@@ -246,7 +252,7 @@ class ground_truth():
                 ONB = bspline_basis_repeated(x, N, degree=3)
                 return (ONB * xi).sum(dim=1)
             elif basis_functions == "Fourier":
-                ONB = fourier_basis_repeated(x, N, M=1000)
+                ONB = fourier_basis_repeated(x, N)
                 return (ONB * xi).sum(dim=1)
             elif basis_functions == "RKHS":
                 return kernel(x.reshape(-1, self.X_plot.shape[1]), self.X_plot) @ xi
@@ -266,32 +272,6 @@ class ground_truth():
             return 1/5*np.random.standard_t(df=10) * np.abs(x.item())
     def conduct_experiment(self, x):
         return torch.tensor(self.f(x) + self.noise(self.noise_type, x), dtype=torch.float32)
-
-
-def generate_coefficients(coeff_distribution, N, Gaussian_std=1.0, dtype=torch.float32, device=None, M=None):
-    """Generate coefficient vector xi with specified distribution.
-    For Fourier_decay with repeated basis (M < N), apply decay pattern to first M coefficients and repeat.
-    """
-    if coeff_distribution == "Gaussian":
-        return torch.randn(N, dtype=dtype, device=device) * Gaussian_std
-    elif coeff_distribution == "Fourier_decay":
-        # If M is provided and < N, create decay for M terms and repeat
-        if M is not None and M < N:
-            k = torch.arange(1, M + 1, dtype=dtype, device=device)
-            decay_pattern = 1.0 / (k**2)  # Decay as 1/k^2 for smoothness
-            # Repeat the pattern to fill N
-            repeats = N // M
-            remainder = N % M
-            decay = decay_pattern.repeat(repeats)
-            if remainder > 0:
-                decay = torch.cat([decay, decay_pattern[:remainder]])
-        else:
-            # Apply decay to all N indices
-            k = torch.arange(1, N + 1, dtype=dtype, device=device)
-            decay = 1.0 / (k**2)
-        return torch.randn(N, dtype=dtype, device=device) * decay * Gaussian_std
-    else:
-        raise ValueError(f"Unknown coeff_distribution: {coeff_distribution}")
 
 def generate_noise(noise_type, R, size, x=None):
     from scipy.stats import t
@@ -315,7 +295,7 @@ def create_random_functions(coeff_distribution, Gaussian_std, X_plot, basis_func
     elif basis_functions == "BSpline":
             ONB = bspline_basis_repeated(X_plot, N, degree=3)
     elif basis_functions == "Fourier":
-        ONB = fourier_basis_repeated(X_plot, N, M=1000)
+        ONB = fourier_basis_repeated(X_plot, N)
     elif basis_functions == "RKHS":
         K = kernel(X_plot, X_plot).to_dense()
         ONB = K
@@ -337,19 +317,20 @@ def create_random_functions(coeff_distribution, Gaussian_std, X_plot, basis_func
             noise_matrix = torch.zeros([len(y_interpol), m_functions])
             xi0_matrix = torch.zeros([ONB.shape[1], m_functions], dtype=ONB.dtype, device=ONB.device)
             
-            # Generate decay pattern once if Fourier_decay
-            if coeff_distribution == "Fourier_decay":
-                k = torch.arange(1, ONB.shape[1] + 1, dtype=ONB.dtype, device=ONB.device)
-                decay = 1.0 / (k**2)
-            
+            # Generate coefficient-wise decay once if Fourier_decay
+
             for j in range(m_functions):
+                if coeff_distribution == "Fourier_decay":
+                    k = torch.arange(1, ONB.shape[1] + 1, dtype=ONB.dtype, device=ONB.device)
+                    decay = 1.0 / (k**2)
+
                 noise = generate_noise(noise_type, R, len(y_interpol), X_sample if noise_type == "heteroscedastic" else None)
                 noise_matrix[:, j] = noise
-                
+
                 if coeff_distribution == "Gaussian":
                     xi0 = torch.randn(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) * Gaussian_std
                 elif coeff_distribution == "Fourier_decay":
-                    xi0 = torch.randn(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) * decay * Gaussian_std
+                    xi0 = torch.randn(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) * Gaussian_std * decay
                 else:
                     raise ValueError(f"Unknown coeff_distribution: {coeff_distribution}")
                 xi0_matrix[:, j] = xi0
@@ -393,19 +374,19 @@ def create_random_functions(coeff_distribution, Gaussian_std, X_plot, basis_func
         noise_matrix = torch.zeros([len(y_interpol), m_functions])
         xi0_matrix = torch.zeros([ONB.shape[1], m_functions], dtype=ONB.dtype, device=ONB.device)
         
-        # Generate decay pattern once if Fourier_decay
-        if coeff_distribution == "Fourier_decay":
-            k = torch.arange(1, ONB.shape[1] + 1, dtype=ONB.dtype, device=ONB.device)
-            decay = 1.0 / (k**2)
-        
+        # Generate coefficient-wise decay once if Fourier_decay
+
         for j in range(m_functions):
+            if coeff_distribution == "Fourier_decay":
+                k = torch.arange(1, ONB.shape[1] + 1, dtype=ONB.dtype, device=ONB.device)
+                decay = 1.0 / (k**2)
+
             noise = generate_noise(noise_type, R, len(y_interpol), X_sample if noise_type == "heteroscedastic" else None)
             noise_matrix[:, j] = noise
-            
             if coeff_distribution == "Gaussian":
                 xi0 = torch.randn(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) * Gaussian_std
             elif coeff_distribution == "Fourier_decay":
-                xi0 = torch.randn(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) * decay  # * Gaussian_std
+                xi0 = torch.randn(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) * Gaussian_std * decay
             else:
                 raise ValueError(f"Unknown coeff_distribution: {coeff_distribution}")
             xi0_matrix[:, j] = xi0
