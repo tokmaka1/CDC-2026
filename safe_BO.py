@@ -155,9 +155,9 @@ def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=Fal
 if __name__ == '__main__':
         introductory_example = True  # Section 4; toy example to compare classic scenario theory with wait and judge
         noise_type = "uniform"  # Student-t, Gaussian, uniform, heteroscedastic
-        iterations = 20
+        iterations = 30
         eta = 1e-4
-        R = 0  # 5e-3  # 1e-2  #  # 5e-3  # for noise in the observations
+        R =  1e-3 # 5e-3  # 1e-2  #  # 5e-3  # for noise in the observations
         delta_confidence = 0.1      
         bar_epsilon_tensor = torch.tensor([])
         coeff_distribution = "Gaussian"  # Options: Gaussian, uniform, Fourier_decay, Student t
@@ -169,7 +169,7 @@ if __name__ == '__main__':
         gamma_confidence = 0.1  
         exploration_threshold = 0.1  #  0.2
         lengthscale = 0.1
-        Gaussian_std = 1e-2  # 1e-2  # 1e-2  # 1e-2  # for the coefficents of the random functions, not the noise in the observations
+        Gaussian_std = 1e-1  # 1e-2  # 1e-2  # 1e-2  # for the coefficents of the random functions, not the noise in the observations
         RKHS_norm = 1
         beta_list = []
         beta_list_ours = []
@@ -227,8 +227,8 @@ if __name__ == '__main__':
                 lb, ub, argmin, argmax, tensor_random_functions, support = create_random_functions(
                     coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample,
                     Y_sample, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=1)
-                # lb_scenario, ub_scenario, argmin_scenario, argmax_scenario, tensor_random_functions_scenario, support_scenario = create_random_functions(
-                # coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample, Y_sample, gamma_confidence, kappa_confidence, wj=False, noise_type=noise_type, R=R, t=1)                
+                lb_scenario, ub_scenario, argmin_scenario, argmax_scenario, tensor_random_functions_scenario, support_scenario = create_random_functions(
+                coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample, Y_sample, gamma_confidence, kappa_confidence, wj=False, noise_type=noise_type, R=R, t=1)                
 
                 # Plots
 

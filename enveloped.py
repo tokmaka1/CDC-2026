@@ -83,9 +83,15 @@ def bspline_basis_repeated(x, N, M=1000, degree=3):
 
 def polynomial_basis_1d_scaled(x, p):
     x = x.view(-1, 1)
-    return torch.cat([x**k for k in range(p)], dim=1)
 
+    c = torch.linspace(0.1, 10.0, p, device=x.device)  # equidistant c_k
+    a_pow = x ** c.view(1, -1)
+    k = torch.arange(p, device=x.device).float()
+    omega = 2 * torch.pi * (1 + 0.001*k)
+    Phi = torch.sin(omega * a_pow)
+    Phi[:, 0] = 1.0  # replace first column
 
+    return Phi
 def haar_wavelet(n, x):
     """Evaluate the n-th Haar wavelet at points x ∈ [0,1]."""
     x = x.reshape(-1)
@@ -245,7 +251,7 @@ class ground_truth():
         if type == "Student-t":
             return self.R*np.random.standard_t(df=10)
     def conduct_experiment(self, x):
-        return torch.tensor(self.f(x))  #  + self.noise(self.noise_type, x), dtype=torch.float32)
+        return torch.tensor(self.f(x) + self.noise(self.noise_type, x), dtype=torch.float32)
 
 def generate_noise(noise_type, R, size, x=None):
     from scipy.stats import t
