@@ -177,8 +177,7 @@ if __name__ == '__main__':
         beta_list = []
         beta_list_ours = []
 
-        X_plot = compute_X_plot(n_dimensions=1, points_per_axis=1000)
-        number_of_KL_terms = len(X_plot)
+        X_plot = compute_X_plot(n_dimensions=2, points_per_axis=100)
         gt = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, kernel=kernel, noise_type=noise_type, R=R)   
         safety_threshold = torch.quantile(gt.fX, 0.4).item() 
         X_sample_init, Y_sample_init = initial_safe_samples(gt, num_safe_points=1, X_plot=X_plot, R=R, safety_threshold=safety_threshold)
