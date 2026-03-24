@@ -24,31 +24,31 @@ import os
 # from IPython import embed as IPS
 
 
-class GPRegressionModel(gpytorch.models.ExactGP):  # this model has to be build "new"
-    def __init__(self, train_x, train_y, eta, lengthscale):
-        n_devices=1
-        output_device=torch.device('cpu')
-        likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        likelihood.noise = torch.tensor(eta)
-        super(GPRegressionModel, self).__init__(train_x, train_y, likelihood)
-        self.mean_module = gpytorch.means.ConstantMean()
-        # set to 0
-        self.mean_module.constant.data.fill_(0.0)
-        # freeze
-        self.mean_module.constant.requires_grad = False
-        self.kernel = gpytorch.kernels.MaternKernel(nu=3/2)
-        self.kernel.lengthscale = lengthscale
-        # self.base_kernel.lengthscale.requires_grad = False; somehow does not work
-        if output_device.type != 'cpu':
-            self.covar_module = gpytorch.kernels.MultiDeviceKernel(
-                self.kernel, device_ids=range(n_devices), output_device=output_device)
-        else:
-            self.covar_module = self.kernel
+# class GPRegressionModel(gpytorch.models.ExactGP):  # this model has to be build "new"
+#     def __init__(self, train_x, train_y, eta, lengthscale):
+#         n_devices=1
+#         output_device=torch.device('cpu')
+#         likelihood = gpytorch.likelihoods.GaussianLikelihood()
+#         likelihood.noise = torch.tensor(eta)
+#         super(GPRegressionModel, self).__init__(train_x, train_y, likelihood)
+#         self.mean_module = gpytorch.means.ConstantMean()
+#         # set to 0
+#         self.mean_module.constant.data.fill_(0.0)
+#         # freeze
+#         self.mean_module.constant.requires_grad = False
+#         self.kernel = gpytorch.kernels.MaternKernel(nu=3/2)
+#         self.kernel.lengthscale = lengthscale
+#         # self.base_kernel.lengthscale.requires_grad = False; somehow does not work
+#         if output_device.type != 'cpu':
+#             self.covar_module = gpytorch.kernels.MultiDeviceKernel(
+#                 self.kernel, device_ids=range(n_devices), output_device=output_device)
+#         else:
+#             self.covar_module = self.kernel
 
-    def forward(self, x):
-        mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
-        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+#     def forward(self, x):
+#         mean_x = self.mean_module(x)
+#         covar_x = self.covar_module(x)
+#         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 
 
@@ -131,7 +131,7 @@ class PACSBO():
             raise Exception("Safe set is empty")
 
 
-    def compute_model(self, gpr):
+    def compute_model(self, gpr):  # we do not need this here!
         self.model = gpr(train_x=self.x_sample, train_y=self.y_sample, eta=self.eta, lengthscale=self.lengthscale)
         # Does not matter which model now for covariance matrix
         self.K = self.model.covar_module(self.x_sample, self.x_sample).evaluate()  # self.model(self.x_sample).covariance_matrix

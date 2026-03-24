@@ -19,96 +19,6 @@ def compute_X_plot(n_dimensions, points_per_axis):
     X_plot = torch.cartesian_prod(*X_plot_per_domain_nd).reshape(-1, n_dimensions)
     return X_plot
 
-def bspline_basis_torch(x, N, degree=3):
-    x = x.view(-1)
-
-    # knot vector (clamped, uniform)
-    n_knots = N + degree + 1
-    knots = torch.zeros(n_knots, dtype=x.dtype, device=x.device)
-
-    n_interior = n_knots - 2*(degree+1)
-    if n_interior > 0:
-        interior = torch.linspace(0, 1, n_interior + 2, dtype=x.dtype, device=x.device)[1:-1]
-        knots[degree+1:degree+1+n_interior] = interior
-    knots[-(degree+1):] = 1.0
-
-    # avoid boundary issue at x = 1
-    x = torch.clamp(x, max=1.0 - 1e-12)
-
-    # degree 0
-    B = torch.zeros((N, len(x)), dtype=x.dtype, device=x.device)
-    for i in range(N):
-        # B[i] = ((x >= knots[i]) & (x < knots[i+1])).to(x.dtype)
-        if i == N - 1:
-            B[i] = ((x >= knots[i]) & (x <= knots[i+1])).to(x.dtype)  # end point consistency
-        else:
-            B[i] = ((x >= knots[i]) & (x < knots[i+1])).to(x.dtype)
-
-    # recursion
-    for k in range(1, degree+1):
-        B_new = torch.zeros_like(B)
-        for i in range(N):
-            denom1 = knots[i+k] - knots[i]
-            denom2 = knots[i+k+1] - knots[i+1]
-
-            term1 = 0.0
-            term2 = 0.0
-
-            if denom1 > 0:
-                term1 = (x - knots[i]) / denom1 * B[i]
-
-            if denom2 > 0 and i+1 < N:
-                term2 = (knots[i+k+1] - x) / denom2 * B[i+1]
-
-            B_new[i] = term1 + term2
-        B = B_new
-
-    return B.T  # shape: [len(x), N]
-
-def bspline_basis_repeated(x, N, M=1000, degree=3):
-    # generate true spline basis (size: len(x) x M)
-    Phi_small = bspline_basis_torch(x, M, degree)  # (n, M)
-
-    # repeat columns to reach N
-    repeats = N // M
-    remainder = N % M
-
-    Phi = Phi_small.repeat(1, repeats)  # (n, M*repeats)
-
-    if remainder > 0:
-        Phi = torch.cat([Phi, Phi_small[:, :remainder]], dim=1)
-
-    return Phi  # shape: (len(x), N)
-
-
-def polynomial_basis_1d_scaled(x, p):
-    x = x.view(-1, 1)
-    return torch.cat([x**k for k in range(p)], dim=1)
-
-
-def haar_wavelet(n, x):
-    """Evaluate the n-th Haar wavelet at points x ∈ [0,1]."""
-    x = x.reshape(-1)
-    if n == 0:
-        return torch.ones_like(x)
-
-    k = int(torch.floor(torch.log2(torch.tensor(n, dtype=torch.float32))))
-    p = n - 2**k
-    width = 1 / 2**k
-    start = p * width
-    mid = start + width / 2
-    end = start + width
-
-    h = torch.zeros_like(x)
-    h[(x >= start) & (x < mid)] = 1.0
-    h[(x >= mid) & (x < end)] = -1.0
-    return h * (2**(k / 2))
-
-def generate_haar_basis(x, N):
-    """Return a [len(x) x N] matrix of Haar basis functions evaluated at x."""
-    x = x.reshape(-1)  # keep singletons as length-1 vectors
-    basis = [haar_wavelet(n, x) for n in range(N)]  # list of 1D tensors
-    return torch.stack(basis, dim=1)  # shape [len(x), N]
 
 def epsilon_wait_and_judge(s, num_scenario, beta, tol=1e-10, max_iter=200):
     k = int(s)
@@ -190,27 +100,15 @@ def m_wait_and_judge(s, epsilon, beta, max_m=10000, tol=1e-10, max_iter=200):
 
 
 class ground_truth():
-    def __init__(self, coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, lengthscale, noise_type="uniform", R=1e-1):
+    def __init__(self, coeff_distribution, Gaussian_std, X_plot, kernel, noise_type="uniform", R=1e-1):
         N = len(X_plot)
         self.X_plot = X_plot
         self.R = R
         self.noise_type = noise_type
-        self.basis_functions = basis_functions
         self.kernel = kernel
-        self.lengthscale = lengthscale
 
-        # Build the basis matrix for X_plot
-        if basis_functions == "Haar":
-            ONB = generate_haar_basis(X_plot, N)
-        elif basis_functions == "BSpline":
-            ONB = bspline_basis_repeated(X_plot, N, degree=3)
-        elif basis_functions == "RKHS":
-            K = kernel(X_plot, X_plot).to_dense()
-            ONB = K
-        elif basis_functions == "polynomial":
-            ONB = polynomial_basis_1d_scaled(X_plot, p=N)  # c is a scaling factor to control the norm of the basis functions
-        else:
-            raise ValueError(f"Unknown basis_functions: {basis_functions}")
+        K = kernel(X_plot, X_plot).to_dense()
+        ONB = K
 
         # Sample coefficients xi the same way as in create_random_functions
         xi = sample_coefficients(coeff_distribution, ONB, Gaussian_std)
@@ -221,69 +119,34 @@ class ground_truth():
 
         # Define the function evaluator for arbitrary x
         def f_eval(x):
-            if basis_functions == "Haar":
-                phi = generate_haar_basis(x, N)
-                return (phi * xi).sum(dim=1)
-            elif basis_functions == "BSpline":
-                ONB = bspline_basis_repeated(x, N, degree=3)
-                return (ONB * xi).sum(dim=1)
-            elif basis_functions == "RKHS":
-                return kernel(x.reshape(-1, self.X_plot.shape[1]), self.X_plot) @ xi
-            elif basis_functions == "polynomial":
-                ONB = polynomial_basis_1d_scaled(x, p=N)
-                return (ONB * xi).sum(dim=1)
-            else:
-                raise ValueError(f"Unknown basis_functions: {basis_functions}")
-
+            ONB = kernel(x.reshape(-1, self.X_plot.shape[1]), self.X_plot).to_dense()
+            return (ONB * xi).sum(dim=1)
         self.f = f_eval
 
-    def noise(self, type, x):
-        if type == "Gaussian":
-            return np.random.normal(loc=0.0, scale=self.R)
+    def noise(self, type):  # let us just consider uniform noise here
+
         if type == "uniform":
             return -self.R + 2*self.R*np.random.uniform()
-        if type == "Student-t":
-            return self.R*np.random.standard_t(df=10)
     def conduct_experiment(self, x):
-        return torch.tensor(self.f(x))  #  + self.noise(self.noise_type, x), dtype=torch.float32)
+        return torch.tensor(self.f(x)  + self.noise(self.noise_type), dtype=torch.float32)
 
 def generate_noise(noise_type, R, size, x=None):
-    from scipy.stats import t
-    if noise_type == "Gaussian":
-        return torch.randn(size) * R
-    elif noise_type == "uniform":
+    if noise_type == "uniform":
         return -R + 2 * R * torch.rand(size)
-    elif noise_type == "Student-t":
-        return torch.tensor(t.rvs(df=10, size=size)) * R
-    else:
-        raise ValueError(f"Unknown noise_type: {noise_type}")
 
 
 def sample_coefficients(coeff_distribution, ONB, Gaussian_std):
     if coeff_distribution == "Gaussian":
         return torch.randn(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) * Gaussian_std
-    if coeff_distribution == "uniform":
-        return (2 * Gaussian_std) * torch.rand(ONB.shape[1], dtype=ONB.dtype, device=ONB.device) - Gaussian_std
-    if coeff_distribution == "Student-t":
-        dist = torch.distributions.StudentT(df=10.0)
-        return dist.sample((ONB.shape[1],)).to(dtype=ONB.dtype, device=ONB.device) * Gaussian_std
     raise ValueError(f"Unknown coeff_distribution: {coeff_distribution}")
 
 
-def create_random_functions(coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample,
+def create_random_functions(coeff_distribution, Gaussian_std, X_plot, kernel, X_sample,
                              Y_sample, gamma_confidence, kappa_confidence, wj=True, noise_type="uniform", R=1e-1, t=1):
     N = len(X_plot)
     # list_random_RKHS_norms.append(torch.sqrt(alpha.T @ kernel(X_c, X_c).evaluate() @ alpha))
-    if basis_functions == "Haar":
-        phi_n = generate_haar_basis(X_plot, N)
-        ONB = phi_n  # Hadamard product, we will multiply xi with this; scaled eigenvectors
-    elif basis_functions == "BSpline":
-            ONB = bspline_basis_repeated(X_plot, N, degree=3)
-    elif basis_functions == "RKHS":
-        K = kernel(X_plot, X_plot).to_dense()
-        ONB = K
-    elif basis_functions == "polynomial":
-        ONB = polynomial_basis_1d_scaled(X_plot, p=N)
+    K = kernel(X_plot, X_plot).to_dense()  # just this!
+    ONB = K
 
 
         

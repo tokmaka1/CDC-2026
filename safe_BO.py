@@ -34,6 +34,9 @@ from enveloped import create_random_functions, ground_truth
 
 
 
+
+
+
 def acquisition_function(cube):
     # if sum(torch.logical_or(cube.M, cube.G)) != 0:
     #     max_indices = torch.nonzero(cube.ucb[torch.logical_or(cube.M, cube.G)] == torch.max(cube.ucb[torch.logical_or(cube.M, cube.G)]), as_tuple=True)[0]
@@ -153,16 +156,16 @@ def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=Fal
 
 
 if __name__ == '__main__':
-        introductory_example = True  # Section 4; toy example to compare classic scenario theory with wait and judge
+        introductory_example = False  # Section 4; toy example to compare classic scenario theory with wait and judge
         noise_type = "uniform"  # Student-t, Gaussian, uniform, heteroscedastic
         iterations = 20
         eta = 1e-4
-        R = 0  # 5e-3  # 1e-2  #  # 5e-3  # for noise in the observations
+        R = 1e-2  # 5e-3  # 1e-2  #  # 5e-3  # for noise in the observations
         delta_confidence = 0.1      
         bar_epsilon_tensor = torch.tensor([])
-        coeff_distribution = "Gaussian"  # Options: Gaussian, uniform, Fourier_decay, Student t
-        basis_functions = "polynomial"
-        kernel = gpytorch.kernels.RBFKernel()
+        coeff_distribution = "Gaussian"  # Options: Gaussian 
+        kernel = gpytorch.kernels.MaternKernel(nu=3/2)
+        kernel.lengthscale = 0.1
         kernel.lengthscale = 0.1
 
         kappa_confidence = 1e-3   # 0.01  
@@ -176,7 +179,7 @@ if __name__ == '__main__':
 
         X_plot = compute_X_plot(n_dimensions=1, points_per_axis=1000)
         number_of_KL_terms = len(X_plot)
-        gt = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, basis_functions=basis_functions, kernel=kernel, lengthscale=lengthscale, noise_type=noise_type, R=R)   
+        gt = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, kernel=kernel, noise_type=noise_type, R=R)   
         safety_threshold = torch.quantile(gt.fX, 0.4).item() 
         X_sample_init, Y_sample_init = initial_safe_samples(gt, num_safe_points=1, X_plot=X_plot, R=R, safety_threshold=safety_threshold)
         X_sample = X_sample_init.clone()
@@ -193,7 +196,7 @@ if __name__ == '__main__':
                 # list_cubes.append(copy.deepcopy(cube))  # store the cube before updating it
                 # cube = update_noise_tensor(kappa_confidence, gamma_confidence, t, R, cube)
                 lb, ub, argmin, argmax, tensor_random_functions, support = create_random_functions(
-                    coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample,
+                    coeff_distribution, Gaussian_std, X_plot, kernel, X_sample,
                     Y_sample, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)
 
                 update_model(cube, lb, ub)
@@ -215,20 +218,12 @@ if __name__ == '__main__':
             plot(cube, gt, tensor_random_functions, support, plot_support=True, save=False, title="numerical_example_end.tex", t=t) 
 
         elif introductory_example:
-                step = 1  # Plot every 5th point to reduce file size; adjust as needed
-                # idx_init = torch.linspace(0, 20, steps=15, dtype=torch.long)
-                # X_sample = X_plot[idx_init].clone()
-                # Y_sample = torch.stack([
-                #     gt.conduct_experiment(x.unsqueeze(0)).reshape(-1)[0]
-                #     for x in X_sample
-                # ]).to(torch.float32)
+                step = 1
 
 
                 lb, ub, argmin, argmax, tensor_random_functions, support = create_random_functions(
-                    coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample,
+                    coeff_distribution, Gaussian_std, X_plot, kernel, X_sample,
                     Y_sample, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=1)
-                # lb_scenario, ub_scenario, argmin_scenario, argmax_scenario, tensor_random_functions_scenario, support_scenario = create_random_functions(
-                # coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample, Y_sample, gamma_confidence, kappa_confidence, wj=False, noise_type=noise_type, R=R, t=1)                
 
                 # Plots
 
@@ -242,93 +237,3 @@ if __name__ == '__main__':
                 plt.plot(X_plot[::step], gt.fX.detach().numpy()[::step], 'blue', label="Truth")
                 plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=200, label='Samples')
                 plt.title("Wait and judge bounds")
-
-                plt.figure()
-                for i in range(len(support_scenario)):
-                    plt.plot(X_plot[::step], tensor_random_functions_scenario[support_scenario[i], :].detach().numpy()[::step], 'orange', alpha=0.1)
-                plt.fill_between(X_plot.flatten().detach().numpy(), lb_scenario.detach().numpy(), ub_scenario.detach().numpy(), color="orange", alpha=0.2)
-                plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=50, label='Samples')
-                plt.plot(X_plot, lb_scenario.detach().numpy(), 'orange', label="lb, ub")
-                plt.plot(X_plot, ub_scenario.detach().numpy(), 'orange')
-                plt.plot(X_plot, gt.fX.detach().numpy(), 'blue', label="Truth")
-                # tikzplotlib.save("scenario_apprach_toy.tex")               
-                
-                plt.figure()
-                for i in range(tensor_random_functions_scenario.shape[0]):
-                    plt.plot(X_plot[::step], tensor_random_functions_scenario[i, :].detach().numpy()[::step], 'gray', alpha=0.1)
-                plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb_scenario.detach().numpy()[::step], ub_scenario.detach().numpy()[::step], color="gray", alpha=0.2)
-                plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=100, label='Samples')
-                plt.plot(X_plot[::step], lb_scenario.detach().numpy()[::step], 'gray', label="lb, ub")
-                plt.plot(X_plot[::step], ub_scenario.detach().numpy()[::step], 'gray')
-                plt.plot(X_plot[::step], gt.fX.detach().numpy()[::step], 'blue', label="Truth")
-                plt.title("Scneario approach (all scenarios)")                
-
-
-                # Compare the bounds
-                plt.figure()
-                for i in range(len(support)):
-                    plt.plot(X_plot[::step], tensor_random_functions[support[i], :].detach().numpy()[::step], 'gray', alpha=0.1)
-                plt.plot(X_plot[::step], gt.fX.detach().numpy()[::step], 'blue', label="Truth")
-                plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=100, label='Samples')
-                plt.plot(X_plot[::step], lb_scenario.detach().numpy()[::step], 'orange', label="lb, ub scenario")
-                plt.plot(X_plot[::step], ub_scenario.detach().numpy()[::step], 'orange')
-                plt.plot(X_plot[::step], lb.detach().numpy()[::step], 'gray', label="lb, ub wait and judge")
-                plt.plot(X_plot[::step], ub.detach().numpy()[::step], 'gray')
-                plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb_scenario.detach().numpy()[::step], ub_scenario.detach().numpy()[::step], color="orange", alpha=0.1)
-                plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb.detach().numpy()[::step], ub.detach().numpy()[::step], color="gray", alpha=0.3)
-                # tikzplotlib.save("bounds_comparison_toy.tex")
-
-
-                # If Haar wavelet; zero order hold plot
-                if basis_functions == "Haar":
-                    step = 1  # Plot every 5th point to reduce file size; adjust as needed
-                    idx_init = torch.linspace(0, 20, steps=15, dtype=torch.long)
-                    X_sample = X_plot[idx_init].clone()
-                    Y_sample = torch.stack([
-                        gt.conduct_experiment(x.unsqueeze(0)).reshape(-1)[0]
-                        for x in X_sample
-                    ]).to(torch.float32)
-
-
-                    lb, ub, argmin, argmax, tensor_random_functions, support = create_random_functions(
-                        coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample,
-                        Y_sample, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=1)
-
-                    step = 1  # otherwise plot makes no sense; rather leave out supports!
-                    plt.figure()
-                    # for i in range(len(support)):
-                    #     step_support = 8
-                    #     plt.step(X_plot[::step_support], tensor_random_functions[support[i], :].detach().numpy()[::step_support], 'gray', alpha=0.1, where='post')
-                    plt.fill_between(X_plot[::step].flatten(), lb.detach().numpy()[::step], ub.detach().numpy()[::step], color="gray", alpha=0.2, step='post')
-                    plt.step(X_plot[::step].flatten(), lb.detach().numpy()[::step], 'gray', label="lb, ub", where='post')
-                    plt.step(X_plot[::step].flatten(), ub.detach().numpy()[::step], 'gray', where='post')
-                    plt.step(X_plot[::step].flatten(), gt.fX.detach().numpy()[::step], 'blue', label="Truth", where='post')
-                    plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=200, label='Samples')
-                    plt.xlim(-1e-3, 0.025)
-                    # plt.title("Wait and judge bounds (Haar - Zero Order Hold)")
-                    tikzplotlib.save("Haar_wavelet_end.tex")
-
-
-                    step = 1  # Plot every 5th point to reduce file size; adjust as needed
-                    X_sample = X_plot[10].clone()
-                    Y_sample = torch.stack([
-                        gt.conduct_experiment(x.unsqueeze(0)).reshape(-1)[0]
-                        for x in X_sample
-                    ]).to(torch.float32)
-
-
-                    lb, ub, argmin, argmax, tensor_random_functions, support = create_random_functions(
-                        coeff_distribution, Gaussian_std, X_plot, basis_functions, kernel, X_sample,
-                        Y_sample, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=1)
-                    plt.figure()
-                    # for i in range(len(support)):
-                    #     step_support = 8
-                    #     plt.step(X_plot[::step_support], tensor_random_functions[support[i], :].detach().numpy()[::step_support], 'gray', alpha=0.1, where='post')
-                    plt.fill_between(X_plot[::step].flatten(), lb.detach().numpy()[::step], ub.detach().numpy()[::step], color="gray", alpha=0.2, step='post')
-                    plt.step(X_plot[::step].flatten(), lb.detach().numpy()[::step], 'gray', label="lb, ub", where='post')
-                    plt.step(X_plot[::step].flatten(), ub.detach().numpy()[::step], 'gray', where='post')
-                    plt.step(X_plot[::step].flatten(), gt.fX.detach().numpy()[::step], 'blue', label="Truth", where='post')
-                    plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=200, label='Samples')
-                    plt.xlim(-1e-3, 0.025)
-                    # plt.title("Wait and judge bounds (Haar - Zero Order Hold)")
-                    tikzplotlib.save("Haar_wavelet_beginning.tex")
