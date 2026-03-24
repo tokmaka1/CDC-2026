@@ -11,6 +11,8 @@ from torch.multiprocessing import Pool
 import copy
 import tikzplotlib
 import os
+from plot_furuta import plot_constraints, plot_rewards, plot_ucb, plot_lcb
+import sys 
 
 random_seed_number = 10
 np.random.seed(random_seed_number)
@@ -32,19 +34,25 @@ plt.rcParams.update({'font.size': 30})
 from pacsbo.pacsbo_main import compute_X_plot, initial_safe_samples, PACSBO
 from enveloped import create_random_functions, ground_truth
 
+# Uncomment the following and clone repo https://git.rwth-aachen.de/quanser-vision/vision-based-furuta-pendulum to conduct Furuta pendulum experiments
+
+repo_path = os.path.join(script_dir, "vision-based-furuta-pendulum")
+print("Repo exists:", os.path.exists(repo_path))
+
+sys.path.insert(0, repo_path)
+# from vision_based_furuta_pendulum_master.gym_brt.envs import QubeBalanceEnv, QubeSwingupEnv
+# from vision_based_furuta_pendulum_master.gym_brt.control.control import QubeHoldControl, QubeFlipUpControl
+
+from gym_brt.envs import QubeBalanceEnv, QubeSwingupEnv
+from gym_brt.control.control import QubeHoldControl, QubeFlipUpControl
+warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
+from IPython import embed as IPS
 
 
 
 
 
 def acquisition_function(cube):
-    # if sum(torch.logical_or(cube.M, cube.G)) != 0:
-    #     max_indices = torch.nonzero(cube.ucb[torch.logical_or(cube.M, cube.G)] == torch.max(cube.ucb[torch.logical_or(cube.M, cube.G)]), as_tuple=True)[0]
-    #     random_max_index = max_indices[torch.randint(len(max_indices), (1,))].item()
-    #     x_new = cube.discr_domain[torch.logical_or(cube.M, cube.G)][random_max_index, :]
-    # else:
-    #      x_new = None
-    # return x_new  # we can return cube, no parallelization needed
     interesting_points = torch.logical_or(cube.M, cube.G)
     if sum(interesting_points) != 0:
         x_new = cube.discr_domain[interesting_points][torch.argmax(cube.uncertainty[interesting_points])]
@@ -56,15 +64,37 @@ def acquisition_function(cube):
 
 
 
-def update_model(cube, lb, ub):
+def update_model(cube, lb_rew, ub_rew, lb_con, ub_con):
     # cube.compute_model(gpr=GPRegressionModel)  # compute confidence intervals?
     # cube.compute_mean_var()
     # We do not need any of the above! 
     # We just need to update the confidence intervals, which are given by the scenario approach.
-    cube.lcb = lb
-    cube.ucb = ub
-    cube.uncertainty = ub - lb
-    # cube.compute_confidence_intervals() old script!
+        # Reward 
+    # self.lcb_rew = self.mean_rew - self.beta_rew*torch.sqrt(self.var)  # we have to use standard deviation instead of variance
+    # self.ucb_rew = self.mean_rew + self.beta_rew*torch.sqrt(self.var)
+    # self.lcb_rew = torch.max(self.lcb_rew_old, self.lcb_rew)  # pointwise!
+    # self.ucb_rew = torch.min(self.ucb_rew_old, self.ucb_rew)
+    # self.lcb_rew_old = self.lcb_rew.clone().detach()
+    # self.ucb_rew_old = self.ucb_rew.clone().detach()
+
+    # # Constraint
+    # self.lcb_con = self.mean_con - self.beta_con*torch.sqrt(self.var)  # we have to use standard deviation instead of variance
+    # self.ucb_con = self.mean_con + self.beta_con*torch.sqrt(self.var)
+    # self.lcb_con = torch.max(self.lcb_con_old, self.lcb_con)  # pointwise!
+    # self.ucb_con = torch.min(self.ucb_con_old, self.ucb_con)
+    # self.lcb_con_old = self.lcb_con.clone().detach()
+    # self.ucb_con_old = self.ucb_con.clone().detach()
+
+
+
+
+    cube.lcb_rew = lb_rew
+    cube.ucb_rew = ub_rew
+    cube.uncertainty_rew = ub_rew - lb_rew
+    cube.lcb_con = lb_con
+    cube.ucb_con = ub_con
+    cube.uncertainty_con = ub_con - lb_con
+    cube.uncertainty = torch.max(cube.uncertainty_rew, cube.uncertainty_con)
     
 
 
@@ -165,74 +195,48 @@ if __name__ == '__main__':
         bar_epsilon_tensor = torch.tensor([])
         coeff_distribution = "Gaussian"  # Options: Gaussian 
         kernel = gpytorch.kernels.MaternKernel(nu=3/2)
-        kernel.lengthscale = 0.1
-        kernel.lengthscale = 0.1
+        kernel.lengthscale = 0.05
 
         kappa_confidence = 1e-3   # 0.01  
         gamma_confidence = 0.1  
-        exploration_threshold = 0.1  #  0.2
-        lengthscale = 0.1
-        Gaussian_std = 1e-2  # 1e-2  # 1e-2  # 1e-2  # for the coefficents of the random functions, not the noise in the observations
-        RKHS_norm = 1
+        Gaussian_std = 1e-1  # 1e-2  # 1e-2  # 1e-2  # for the coefficents of the random functions, not the noise in the observations
         beta_list = []
         beta_list_ours = []
 
         X_plot = compute_X_plot(n_dimensions=2, points_per_axis=100)
-        gt = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, kernel=kernel, noise_type=noise_type, R=R)   
-        safety_threshold = torch.quantile(gt.fX, 0.4).item() 
-        X_sample_init, Y_sample_init = initial_safe_samples(gt, num_safe_points=1, X_plot=X_plot, R=R, safety_threshold=safety_threshold)
+        gt_reward = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, kernel=kernel, noise_type=noise_type, R=R) 
+        gt_constraint = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, kernel=kernel, noise_type=noise_type, R=R)  
+        safety_threshold = torch.quantile(gt_constraint.fX, 0.4).item() 
+        X_sample_init, _ = initial_safe_samples(gt_constraint, num_safe_points=1, X_plot=X_plot, R=R, safety_threshold=safety_threshold)
         X_sample = X_sample_init.clone()
-        Y_sample = Y_sample_init.clone()
+        Y_sample_reward = gt_reward.conduct_experiment(X_sample)
+        Y_sample_constraint = gt_constraint.conduct_experiment(X_sample)
+
+        cube = PACSBO(X_plot, X_sample, safety_threshold)
+        for t in tqdm(range(1, iterations + 1)):
+
+            # Constraints
+            lb_con, ub_con, argmin_con, argmax_con, tensor_random_functions_con, support_con = create_random_functions(
+                coeff_distribution, Gaussian_std, X_plot, kernel, X_sample, Y_sample_constraint, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)
+
+            # Rewards    
+            lb_rew, ub_rew, argmin_rew, argmax_rew, tensor_random_functions_rew, support_rew = create_random_functions(
+                coeff_distribution, Gaussian_std, X_plot, kernel, X_sample, Y_sample_reward, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)
 
 
-        if not introductory_example:
-
-            cube = PACSBO(delta_confidence=delta_confidence, eta=eta, R=R, X_plot=X_plot, X_sample=X_sample,
-                        Y_sample=Y_sample, safety_threshold=safety_threshold, exploration_threshold=exploration_threshold,
-                        RKHS_norm=RKHS_norm, lengthscale=lengthscale)
-            list_cubes = []
-            for t in tqdm(range(1, iterations + 1)):
-                # list_cubes.append(copy.deepcopy(cube))  # store the cube before updating it
-                # cube = update_noise_tensor(kappa_confidence, gamma_confidence, t, R, cube)
-                lb, ub, argmin, argmax, tensor_random_functions, support = create_random_functions(
-                    coeff_distribution, Gaussian_std, X_plot, kernel, X_sample,
-                    Y_sample, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)
-
-                update_model(cube, lb, ub)
-                compute_sets(cube)
-                if t == 1:
-                    pass
-                    # plot(cube, gt, tensor_random_functions, support, plot_support=True, save=False, title="numerical_example_beginning.tex") 
-                x_new = acquisition_function(cube=cube)
-                if x_new != None:
-                    y_new = torch.tensor(gt.conduct_experiment(x=x_new), dtype=torch.float32)
-                else:
-                    # print('Done!')
-                    break
-                Y_sample = torch.cat((Y_sample, y_new), dim=0)
-                X_sample = torch.cat((X_sample, x_new.unsqueeze(0)), dim=0)
-                cube.x_sample = X_sample
-                cube.y_sample = Y_sample
-                list_cubes.append(cube)
-            plot(cube, gt, tensor_random_functions, support, plot_support=True, save=False, title="numerical_example_end.tex", t=t) 
-
-        elif introductory_example:
-                step = 1
-
-
-                lb, ub, argmin, argmax, tensor_random_functions, support = create_random_functions(
-                    coeff_distribution, Gaussian_std, X_plot, kernel, X_sample,
-                    Y_sample, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=1)
-
-                # Plots
-
-                # First: wait and judge plot
-                plt.figure()
-                for i in range(len(support)):
-                    plt.plot(X_plot[::step], tensor_random_functions[support[i], :].detach().numpy()[::step], 'gray', alpha=0.1)
-                plt.fill_between(X_plot.flatten().detach().numpy()[::step], lb.detach().numpy()[::step], ub.detach().numpy()[::step], color="gray", alpha=0.2)
-                plt.plot(X_plot[::step], lb.detach().numpy()[::step], 'gray', label="lb, ub")
-                plt.plot(X_plot[::step], ub.detach().numpy()[::step], 'gray')
-                plt.plot(X_plot[::step], gt.fX.detach().numpy()[::step], 'blue', label="Truth")
-                plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=200, label='Samples')
-                plt.title("Wait and judge bounds")
+            update_model(cube, lb_rew, ub_rew, lb_con, ub_con)
+            compute_sets(cube)
+            if t == 1:
+                pass
+            x_new = acquisition_function(cube=cube)
+            if x_new != None:
+                y_new_reward = torch.tensor(gt_reward.conduct_experiment(x=x_new), dtype=torch.float32)
+                y_new_constraint = torch.tensor(gt_constraint.conduct_experiment(x=x_new), dtype=torch.float32)
+            else:
+                print('Done!')
+                break
+            Y_sample_reward = torch.cat((Y_sample_reward, y_new_reward), dim=0)
+            Y_sample_constraint = torch.cat((Y_sample_constraint, y_new_constraint), dim=0)
+            X_sample = torch.cat((X_sample, x_new.unsqueeze(0)), dim=0)
+            cube.x_sample = X_sample
+        print(123)

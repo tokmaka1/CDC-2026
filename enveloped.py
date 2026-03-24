@@ -74,7 +74,7 @@ def epsilon_wait_and_judge(s, num_scenario, beta, tol=1e-10, max_iter=200):
     return 1.0 - t_star
 
 
-def m_wait_and_judge(s, epsilon, beta, max_m=10000, tol=1e-10, max_iter=200):
+def m_wait_and_judge(s, epsilon, beta, max_m=20000, tol=1e-10, max_iter=200):
     """
     Find the minimal number of scenarios m such that epsilon_wait_and_judge(s, m, beta) <= epsilon.
     """
@@ -107,7 +107,8 @@ class ground_truth():
         self.noise_type = noise_type
         self.kernel = kernel
 
-        K = kernel(X_plot, X_plot).to_dense()
+        # Compute kernel matrix efficiently without storing full matrix
+        K = kernel(X_plot, X_plot).evaluate()
         ONB = K
 
         # Sample coefficients xi the same way as in create_random_functions
@@ -116,6 +117,9 @@ class ground_truth():
 
         # Compute fX for plotting
         self.fX = (ONB * xi).sum(dim=1)
+        # self.fX = torch.tensor([
+            # ONB[i] * xi for i in range(N)
+        # ])
 
         # Define the function evaluator for arbitrary x
         def f_eval(x):
@@ -152,14 +156,15 @@ def create_random_functions(coeff_distribution, Gaussian_std, X_plot, kernel, X_
         
 
     y_interpol = Y_sample  # still interpolation, no noise
-    mask = (X_plot == X_sample.T)          # shape [n, m]
+    # Compare each sample point against each grid point across all coordinates.
+    mask = (X_plot.unsqueeze(1) == X_sample.unsqueeze(0)).all(dim=2)  # shape [n, m]
     interpolation_indices = mask.int().argmax(dim=0).tolist()
 
     if wj is True:
         s = 1  # init
         epsilon_iterative = np.inf
         while epsilon_iterative >= gamma_confidence:
-            m_functions = m_wait_and_judge(s=s, epsilon=gamma_confidence, beta=kappa_confidence, max_m=10000, tol=1e-10, max_iter=200)
+            m_functions = m_wait_and_judge(s=s, epsilon=gamma_confidence, beta=kappa_confidence, max_m=20000, tol=1e-10, max_iter=200)
             tensor_random_functions = torch.zeros([m_functions, len(X_plot)])
             A = ONB[interpolation_indices, :]
             G = A @ A.T
@@ -240,197 +245,3 @@ def create_random_functions(coeff_distribution, Gaussian_std, X_plot, kernel, X_
 
 
 
-if __name__ == '__main__':
-
-    random_seed_number = 11
-    np.random.seed(random_seed_number)
-    torch.manual_seed(random_seed_number)
-
-    number_of_samples = 3
-    gamma_confidence = 0.1
-    kappa_confidence = 1e-3
-    coeff_distribution = "Gaussian"  # Options: Gaussian, uniform, Student-t, Fourier_decay
-    basis_functions = "RKHS"  # Haar wavelet basis functions, not in RKHS, or "RKHS" for standard
-    number_of_KL_terms = 1000  # Number of KL terms to keep
-    X_plot = compute_X_plot(n_dimensions=1, points_per_axis=1000)
-    kernel = gpytorch.kernels.RBFKernel()
-    kernel.lengthscale = 0.1
-    nugget_factor = 0  # 1e-5
-    X_sample = X_plot[500]
-    Y_sample = torch.tensor([0])
-    lb, ub, argmin, argmax, tensor_random_functions, support = \
-    create_random_functions(coeff_distribution, X_plot, basis_functions, kernel, X_sample,
-                             Y_sample, gamma_confidence, kappa_confidence)
-    plt.figure()
-    plt.plot(X_plot, tensor_random_functions[support[0], :].detach().numpy(), 'magenta', alpha=0.1, label="Scenario")
-    for i in range(1, len(support)):
-        plt.plot(X_plot, tensor_random_functions[support[i], :].detach().numpy(), 'magenta', alpha=0.1)
-    plt.fill_between(X_plot.flatten().detach().numpy(), lb.detach().numpy(), ub.detach().numpy(), alpha=0.2)  # , 'gray', alpha=0.2
-    plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=100, label='Samples')
-    plt.plot(X_plot, lb.detach().numpy(), 'blue', label="lb, ub")
-    plt.plot(X_plot, ub.detach().numpy(), 'blue')
-    plt.plot(X_plot, tensor_random_functions[0, :].detach().numpy(), 'black', label="Truth")
-    plt.legend()
-    plt.title("Wait and judge bounds")
-
-    # Running example: \phi_i(x) = 1,x,x^2,x^3,x^4, ..., x^100 or x^1000
-
-
-    plt.figure()
-    plt.plot(X_plot, tensor_random_functions[support[0], :].detach().numpy(), 'magenta', alpha=0.1, label="Support scenarios")
-    for i in range(1, len(support)):
-        plt.plot(X_plot, tensor_random_functions[support[i], :].detach().numpy(), 'magenta', alpha=0.1)
-    plt.fill_between(X_plot.flatten().detach().numpy(), lb.detach().numpy(), ub.detach().numpy(), alpha=0.2)  # , 'gray', alpha=0.2
-    plt.plot(X_plot, lb.detach().numpy(), 'blue', label="lb, ub")
-    plt.plot(X_plot, ub.detach().numpy(), 'blue')
-    plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=100, label='Samples')
-    plt.plot(X_plot, tensor_random_functions[0, :].detach().numpy(), 'black', label="Truth")
-    plt.legend()
-    plt.title("Theorem 1 (support constraints)")
-    # plt.savefig("Theorem_1_support.pdf")
-
-    '''
-
-    plt.figure()
-    plt.plot(X_plot, tensor_random_functions[support[0], :].detach().numpy(), 'magenta', alpha=0.1, label="Scenario")
-    for i in range(1, len(support)):
-        plt.plot(X_plot, tensor_random_functions[support[i], :].detach().numpy(), 'magenta', alpha=0.1)
-    plt.fill_between(X_plot.flatten().detach().numpy(), lb.detach().numpy(), ub.detach().numpy(), alpha=0.2, label='Scenario bounds')  # , 'gray', alpha=0.2
-    plt.scatter(X_sample.detach().numpy(), Y_sample.detach().numpy(), color='k', s=100, label='Samples')
-    plt.plot(X_plot, tensor_random_functions[0, :].detach().numpy(), 'blue', alpha=0.05, label="Truth")
-    plt.legend()
-    # plt.savefig("Students_t.png")
-    plt.show()
-
-    # 
-    t=1
-    kappa=1e-3
-    kappa_t = 6*kappa/(t**2*np.pi**2)
-    nu=1e-1
-    N=1000
-    m_start = 1
-    m=m_start
-    while binom.cdf(2*N-1, m, nu)>kappa_t:
-        m+=100
-    while binom.cdf(2*N-1, m, nu)< kappa_t:
-        m-=1
-    print(m+1)
-    '''
-
-
-    '''
-    support = torch.unique(torch.cat([argmax, argmin], dim=0))
-    s = support.numel()
-
-    print("support scenarios (two-sided tube):", s)
-    # Now get the wait and judge epsilon
-    epsilon_wj = epsilon_wait_and_judge(s, m_functions, beta=1e-3, tol=1e-10)
-
-
-    # Optimization problem
-    x = X_plot.detach().cpu().numpy().reshape(-1)
-    n = x.shape[0]
-
-    # Scenario values on grid: G[j,i] = g_j(x_i)  -> shape (m, n)
-    G = tensor_random_functions.detach().cpu().numpy()
-    m = G.shape[0]
-    W = np.column_stack([np.ones(n), x, x**2, x**3, x**4, x**5, x**6])
-
-    # Interpolation (sample) constraints
-    idx = np.array(interpolation_indices, dtype=int)
-    y = y_interpol.detach().cpu().numpy().reshape(-1)
-
-    c_u = cp.Variable(7)
-    c_l = cp.Variable(7)
-
-    u = W @ c_u   # (n,)
-    l = W @ c_l   # (n,)
-
-
-    constraints = [
-        l[None, :] <= G,
-        G <= u[None, :],
-        u[idx] == y,
-        l[idx] == y,
-    ]
-
-    objective = cp.Minimize(cp.sum(u - l))
-    prob = cp.Problem(objective, constraints)
-
-    prob.solve(
-        solver=cp.SCS,
-        verbose=True,        # prints progress
-        max_iters=1000,      # hard cap (default is much larger)
-        eps=1e-3,            # accuracy; 1e-3–1e-4 is plenty here
-        alpha=1.5            # often speeds convergence
-    )
-    # if prob.status not in ("optimal", "optimal_inaccurate"):
-    #    prob.solve(solver=cp.SCS, verbose=False)
-    print(prob.status)
-
-    c_u_hat = c_u.value
-    c_l_hat = c_l.value
-    u_hat = (W @ c_u_hat)  # (n,)
-    l_hat = (W @ c_l_hat)  # (n,)
-    '''
-
-
-    # Scenario/pointwise approach
-    # Plots
-    '''
-    plt.figure()
-    plt.plot(X_plot, tensor_random_functions[0, :].detach().numpy(), 'magenta', alpha=0.05, label="Scenario")
-    for i in range(1, m_functions):
-        plt.plot(X_plot, tensor_random_functions[i, :].detach().numpy(), 'magenta', alpha=0.05)
-    plt.fill_between(X_plot.flatten().detach().numpy(), lb.detach().numpy(), ub.detach().numpy(), alpha=0.2, label='Scenario bounds')  # , 'gray', alpha=0.2
-    plt.plot(X_plot, ground_truth.detach().numpy(), '-b', label='Ground truth')
-    plt.scatter(x_interpol.detach().numpy(), y_interpol.detach().numpy(), color='k', s=100, label='Samples')
-    plt.legend()
-    # plt.savefig("Students_t.png")
-    plt.show()
-
-
-    # Convex approach
-    plt.figure()
-    plt.plot(X_plot, tensor_random_functions[0, :].detach().numpy(), 'magenta', alpha=0.05, label="Scenario")
-    for i in range(1, m_functions):
-        plt.plot(X_plot, tensor_random_functions[i, :].detach().numpy(), 'magenta', alpha=0.05)
-    plt.plot(X_plot, u_hat, 'red')
-    plt.plot(X_plot, l_hat, 'red', label="Convex bounds")
-    # plt.fill_between(X_plot.flatten().detach().numpy(), l_hat, u_hat, alpha=0.2, label='Convex bounds')  # , 'gray', alpha=0.2
-    plt.plot(X_plot, ground_truth.detach().numpy(), '-b', label='Ground truth')
-    plt.scatter(x_interpol.detach().numpy(), y_interpol.detach().numpy(), color='k', s=100, label='Samples')
-    plt.legend()
-    # plt.savefig("Students_t.png")
-    plt.show()
-
-    # Plotting both
-    plt.figure()
-    plt.plot(X_plot, tensor_random_functions[0, :].detach().numpy(), 'magenta', alpha=0.05, label="Scenario")
-    for i in range(1, m_functions):
-        plt.plot(X_plot, tensor_random_functions[i, :].detach().numpy(), 'magenta', alpha=0.01)
-    plt.fill_between(X_plot.flatten().detach().numpy(), lb.detach().numpy(), ub.detach().numpy(), alpha=0.5, label='Scenario bounds')  # , 'gray', alpha=0.2
-    plt.plot(X_plot, ground_truth.detach().numpy(), '-b', label='Ground truth')
-    plt.scatter(x_interpol.detach().numpy(), y_interpol.detach().numpy(), color='k', s=100, label='Samples')
-    plt.plot(X_plot, u_hat, 'red', label="Parametrized bounds")
-    plt.plot(X_plot, l_hat, 'red')
-    plt.legend()
-    # plt.savefig("Students_t.png")
-    plt.show()
-
-
-
-
-
-    # Support constraints
-    plt.figure()
-    plt.plot(X_plot, tensor_random_functions[support[0], :].detach().numpy(), 'magenta', alpha=0.1, label="Scenario")
-    for i in range(1, len(support)):
-        plt.plot(X_plot, tensor_random_functions[support[i], :].detach().numpy(), 'magenta', alpha=0.1)
-    plt.fill_between(X_plot.flatten().detach().numpy(), lb.detach().numpy(), ub.detach().numpy(), alpha=0.2, label='Scenario bounds')  # , 'gray', alpha=0.2
-    plt.plot(X_plot, ground_truth.detach().numpy(), '-b', label='Ground truth')
-    plt.scatter(x_interpol.detach().numpy(), y_interpol.detach().numpy(), color='k', s=100, label='Samples')
-    plt.legend()
-    # plt.savefig("Students_t.png")
-    plt.show()
-    '''
