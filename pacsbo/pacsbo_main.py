@@ -100,7 +100,7 @@ class ground_truth():
         if type == "uniform":
             return -self.R + 2*self.R*np.random.uniform()
         if type == "Student-t":
-            return 1/10*np.random.standard_t(df=10)
+            return self.R*np.random.standard_t(df=10)
         if type == "heteroscedastic":
             return 1/5*np.random.standard_t(df=10) * np.abs(x.item())
     def conduct_experiment(self, x):  # or maybe we need R, I do not know yet
