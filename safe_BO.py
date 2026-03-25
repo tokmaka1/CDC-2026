@@ -33,6 +33,7 @@ plt.rcParams.update({'font.size': 30})
 
 from pacsbo.pacsbo_main import compute_X_plot, initial_safe_samples, PACSBO
 from enveloped import create_random_functions, ground_truth
+from furuta import ground_truth_Furuta
 
 # Uncomment the following and clone repo https://git.rwth-aachen.de/quanser-vision/vision-based-furuta-pendulum to conduct Furuta pendulum experiments
 
@@ -204,6 +205,7 @@ if __name__ == '__main__':
         beta_list_ours = []
 
         X_plot = compute_X_plot(n_dimensions=2, points_per_axis=100)
+        # gt_furuta = ground_truth_Furuta(safety_threshold=0, use_simulator=True)  # set to False to run on the real system; make sure to have the vision-based-furuta-pendulum repo in place and adjust the import statements at the top of this file accordingly.
         gt_reward = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, kernel=kernel, noise_type=noise_type, R=R) 
         gt_constraint = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, kernel=kernel, noise_type=noise_type, R=R)  
         safety_threshold = torch.quantile(gt_constraint.fX, 0.4).item() 
@@ -240,3 +242,14 @@ if __name__ == '__main__':
             X_sample = torch.cat((X_sample, x_new.unsqueeze(0)), dim=0)
             cube.x_sample = X_sample
         print(123)
+
+
+
+
+
+
+"""
+
+
+
+"""
