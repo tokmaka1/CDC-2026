@@ -2,6 +2,7 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.tri import Triangulation
 
 
 
@@ -54,6 +55,54 @@ def plot_lcb(cube):
     plt.colorbar(sc)  # Add a colorbar to show the mapping
     plt.scatter(X_sample[:, 0], X_sample[:, 1], color='k')
     plt.scatter(X_sample[0, 0], X_sample[0, 1], color='white', marker='D', s=50)
+
+
+def plot_constraint_surface(X_plot, constraint_list, title='Constraint surface'):
+    """Plot a 2D surface-style map: x=X[:,0], y=X[:,1], color=constraint."""
+    X_plot = np.asarray(X_plot)
+    constraint_array = np.asarray(constraint_list).reshape(-1)
+
+    if X_plot.ndim != 2 or X_plot.shape[1] != 2:
+        raise ValueError('X_plot must have shape (n_points, 2).')
+    if X_plot.shape[0] != constraint_array.shape[0]:
+        raise ValueError('X_plot and constraint_list must have the same length.')
+
+    x = X_plot[:, 0]
+    y = X_plot[:, 1]
+
+    plt.figure()
+    tri = Triangulation(x, y)
+    surface = plt.tripcolor(tri, constraint_array, shading='gouraud', cmap='viridis')
+    plt.colorbar(surface, label='Constraint value')
+    plt.scatter(x, y, s=6, c='k', alpha=0.2)
+    plt.xlabel('Parameter 1')
+    plt.ylabel('Parameter 2')
+    plt.title("Constraint value")
+    plt.tight_layout()
+
+
+def plot_reward_surface(X_plot, reward_list, title='Reward surface'):
+    """Plot a 2D surface-style map: x=X[:,0], y=X[:,1], color=reward."""
+    X_plot = np.asarray(X_plot)
+    reward_array = np.asarray(reward_list).reshape(-1)
+
+    if X_plot.ndim != 2 or X_plot.shape[1] != 2:
+        raise ValueError('X_plot must have shape (n_points, 2).')
+    if X_plot.shape[0] != reward_array.shape[0]:
+        raise ValueError('X_plot and reward_list must have the same length.')
+
+    x = X_plot[:, 0]
+    y = X_plot[:, 1]
+
+    plt.figure()
+    tri = Triangulation(x, y)
+    surface = plt.tripcolor(tri, reward_array, shading='gouraud', cmap='plasma')
+    plt.colorbar(surface, label='Reward value')
+    plt.scatter(x, y, s=6, c='k', alpha=0.2)
+    plt.xlabel('Parameter 1')
+    plt.ylabel('Parameter 2')
+    plt.title("Reward value")
+    plt.tight_layout()
 
 
 

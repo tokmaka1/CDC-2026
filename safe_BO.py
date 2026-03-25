@@ -201,26 +201,19 @@ if __name__ == '__main__':
         kappa_confidence = 1e-3   # 0.01  
         gamma_confidence = 0.1  
         Gaussian_std = 1e-1  # 1e-2  # 1e-2  # 1e-2  # for the coefficents of the random functions, not the noise in the observations
-        beta_list = []
-        beta_list_ours = []
-
         X_plot = compute_X_plot(n_dimensions=2, points_per_axis=100)
-        # gt_furuta = ground_truth_Furuta(safety_threshold=0, use_simulator=True)  # set to False to run on the real system; make sure to have the vision-based-furuta-pendulum repo in place and adjust the import statements at the top of this file accordingly.
-        gt_reward = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, kernel=kernel, noise_type=noise_type, R=R) 
-        gt_constraint = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, kernel=kernel, noise_type=noise_type, R=R)  
-        safety_threshold = torch.quantile(gt_constraint.fX, 0.4).item() 
-        X_sample_init, _ = initial_safe_samples(gt_constraint, num_safe_points=1, X_plot=X_plot, R=R, safety_threshold=safety_threshold)
+        gt_furuta = ground_truth_Furuta(safety_threshold=0, use_simulator=False)  # set to False to run on the real system; make sure to have the vision-based-furuta-pendulum repo in place and adjust the import statements at the top of this file accordingly.
+        X_sample_init = torch.tensor([[0.25, 0.25]])                
         X_sample = X_sample_init.clone()
-        Y_sample_reward = gt_reward.conduct_experiment(X_sample)
-        Y_sample_constraint = gt_constraint.conduct_experiment(X_sample)
+        Y_sample_rew_init, Y_sample_con_init = gt_furuta.conduct_experiment(X_sample_init)
 
-        cube = PACSBO(X_plot, X_sample, safety_threshold)
+        Y_sample_rew = Y_sample_rew_init.clone()
+        Y_sample_constraint = Y_sample_con_init.clone()
+        cube = PACSBO(X_plot, X_sample, safety_threshold=0)
         for t in tqdm(range(1, iterations + 1)):
-
             # Constraints
             lb_con, ub_con, argmin_con, argmax_con, tensor_random_functions_con, support_con = create_random_functions(
                 coeff_distribution, Gaussian_std, X_plot, kernel, X_sample, Y_sample_constraint, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)
-
             # Rewards    
             lb_rew, ub_rew, argmin_rew, argmax_rew, tensor_random_functions_rew, support_rew = create_random_functions(
                 coeff_distribution, Gaussian_std, X_plot, kernel, X_sample, Y_sample_reward, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)

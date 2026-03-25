@@ -35,7 +35,7 @@ class ground_truth_Furuta():
             self.state_init = env.reset()
 
     def conduct_experiment(self, x, noise_std=None):
-        param = np.asarray(x, dtype=np.float64)
+        param = np.asarray(x, dtype=np.float64).flatten()
         param = np.concatenate((param, self.last_two_entries))
         self.state = copy.deepcopy(self.state_init)
         reward = 0
@@ -72,7 +72,7 @@ class ground_truth_Furuta():
                     if np.linalg.norm(self.state) < 5e-2:
                         print("swingup completed")
                         upright = True
-            constraint = min(alpha_max - math.pi/2, theta_max - math.pi/2)
+            constraint = math.pi/2 - max(alpha_max, theta_max)  # - math.pi/2, theta_max - math.pi/2)
             print(f'Experiment done. For the parameter {x}, we received the reward {(reward/1000)} and the constraint value {constraint}')
         return torch.tensor([reward/1000, constraint], dtype=torch.float32)
 
