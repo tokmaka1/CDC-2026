@@ -13,6 +13,7 @@ import tikzplotlib
 import os
 from plot_furuta import plot_constraints, plot_rewards, plot_ucb, plot_lcb
 import sys 
+import dill
 
 random_seed_number = 10
 np.random.seed(random_seed_number)
@@ -65,7 +66,7 @@ def acquisition_function(cube):
 
 
 
-def update_model(cube, lb_rew, ub_rew, lb_con, ub_con):
+def update_model(cube, lb_rew, ub_rew, lb_con_1, ub_con_1, lb_con_2, ub_con_2):
     # cube.compute_model(gpr=GPRegressionModel)  # compute confidence intervals?
     # cube.compute_mean_var()
     # We do not need any of the above! 
@@ -92,11 +93,13 @@ def update_model(cube, lb_rew, ub_rew, lb_con, ub_con):
     cube.lcb_rew = lb_rew
     cube.ucb_rew = ub_rew
     cube.uncertainty_rew = ub_rew - lb_rew
-    cube.lcb_con = lb_con
-    cube.ucb_con = ub_con
-    cube.uncertainty_con = ub_con - lb_con
-    cube.uncertainty = torch.max(cube.uncertainty_rew, cube.uncertainty_con)
-    
+    cube.lcb_con_1 = lb_con_1
+    cube.ucb_con_1 = ub_con_1
+    cube.uncertainty_con_1 = ub_con_1 - lb_con_1
+    cube.lcb_con_2 = lb_con_2
+    cube.ucb_con_2 = ub_con_2
+    cube.uncertainty_con_2 = ub_con_2 - lb_con_2
+    cube.uncertainty = torch.max(cube.uncertainty_rew, torch.max(cube.uncertainty_con_1, cube.uncertainty_con_2))
 
 
 def compute_sets(cube):
@@ -187,62 +190,108 @@ def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=Fal
 
 
 if __name__ == '__main__':
-        introductory_example = False  # Section 4; toy example to compare classic scenario theory with wait and judge
+        try_best_param = True  # Section 4; toy example to compare classic scenario theory with wait and judge
         noise_type = "uniform"  # Student-t, Gaussian, uniform, heteroscedastic
-        iterations = 20
-        eta = 1e-4
-        R = 1e-2  # 5e-3  # 1e-2  #  # 5e-3  # for noise in the observations
-        delta_confidence = 0.1      
+        iterations = 20  # 20 iterations should be enough
+        R = 5e-2  # 5e-3  # 1e-2  #  # 5e-3  # for noise in the observations
         bar_epsilon_tensor = torch.tensor([])
         coeff_distribution = "Gaussian"  # Options: Gaussian 
         kernel = gpytorch.kernels.MaternKernel(nu=3/2)
-        kernel.lengthscale = 0.05
+        kernel.lengthscale = 0.01  # Increasing smoothness
 
-        kappa_confidence = 1e-3   # 0.01  
+        kappa_confidence = 1e-3    
         gamma_confidence = 0.1  
-        Gaussian_std = 1e-1  # 1e-2  # 1e-2  # 1e-2  # for the coefficents of the random functions, not the noise in the observations
-        X_plot = compute_X_plot(n_dimensions=2, points_per_axis=100)
+        Gaussian_std = 1e-1  # 1e-1 for 1 sample
+        X_plot = compute_X_plot(n_dimensions=2, points_per_axis=101)
         gt_furuta = ground_truth_Furuta(safety_threshold=0, use_simulator=False)  # set to False to run on the real system; make sure to have the vision-based-furuta-pendulum repo in place and adjust the import statements at the top of this file accordingly.
-        X_sample_init = torch.tensor([[0.25, 0.25]])                
-        X_sample = X_sample_init.clone()
-        Y_sample_rew_init, Y_sample_con_init = gt_furuta.conduct_experiment(X_sample_init)
+        X_sample_init = torch.tensor([[0.23, 0.40]])  # , [0.9, 0.32]])  # start from here, safe but low-performing      
+        # Maximizer we found:
 
-        Y_sample_rew = Y_sample_rew_init.clone()
-        Y_sample_constraint = Y_sample_con_init.clone()
-        cube = PACSBO(X_plot, X_sample, safety_threshold=0)
+        # X_sample_init = torch.tensor([[0.19, 0.35]])
+        if try_best_param:
+            # Starting parameter first
+            X_sample_init = torch.tensor([[0.23, 0.40]]) 
+            _, _, _, alpha_list_init, theta_list_init = gt_furuta.conduct_experiment(X_sample_init)
+            X_sample_best = torch.tensor([[0.19, 0.35]])
+            _, _, _, alpha_list_best, theta_list_best = gt_furuta.conduct_experiment(X_sample_best)
+            dict_angles = {
+                "alpha_init": alpha_list_init,
+                "theta_init": theta_list_init,
+                "alpha_best": alpha_list_best,
+                "theta_best": theta_list_best
+            }
+            dill.dump(dict_angles, open("angles.pkl", "wb"))
+            raise Exception("Done with angles")
+        X_sample = X_sample_init.clone()
+        Y_sample_rew_init, Y_sample_con_1_init, Y_sample_con_2_init, _, _ = gt_furuta.conduct_experiment(X_sample_init)
+        list_lb_rew = []  # putting max S
+        list_lb_con_1 = []
+        list_lb_con_2 = []
+        list_ub_rew = []
+        list_ub_con_1 = []
+        list_ub_con_2 = []
+        Y_sample_reward = Y_sample_rew_init.clone()
+        Y_sample_constraint_1 = Y_sample_con_1_init.clone()
+        Y_sample_constraint_2 = Y_sample_con_2_init.clone()
+        cube = PACSBO(X_plot, X_sample, Y_sample_reward, Y_sample_constraint_1, Y_sample_constraint_2, safety_threshold=0)
         for t in tqdm(range(1, iterations + 1)):
             # Constraints
-            lb_con, ub_con, argmin_con, argmax_con, tensor_random_functions_con, support_con = create_random_functions(
-                coeff_distribution, Gaussian_std, X_plot, kernel, X_sample, Y_sample_constraint, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)
+            lb_con_1, ub_con_1, argmin_con_1, argmax_con_1, tensor_random_functions_con_1, support_con_1 = create_random_functions(
+                coeff_distribution, Gaussian_std, X_plot, kernel, X_sample, Y_sample_constraint_1, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)
+            
+            lb_con_2, ub_con_2, argmin_con_2, argmax_con_2, tensor_random_functions_con_2, support_con_2 = create_random_functions(
+                coeff_distribution, Gaussian_std, X_plot, kernel, X_sample, Y_sample_constraint_2, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)
             # Rewards    
             lb_rew, ub_rew, argmin_rew, argmax_rew, tensor_random_functions_rew, support_rew = create_random_functions(
                 coeff_distribution, Gaussian_std, X_plot, kernel, X_sample, Y_sample_reward, gamma_confidence, kappa_confidence, wj=True, noise_type=noise_type, R=R, t=t)
 
 
-            update_model(cube, lb_rew, ub_rew, lb_con, ub_con)
+            update_model(cube, lb_rew, ub_rew, lb_con_1, ub_con_1, lb_con_2, ub_con_2)
             compute_sets(cube)
-            if t == 1:
-                pass
+            # Update lists
+            list_lb_rew.append(cube.lcb_rew[cube.S].max().item())  # max over the safe set
+            list_lb_con_1.append(cube.lcb_con_1[cube.S].max().item())  # max over the safe set
+            list_ub_rew.append(cube.ucb_rew[cube.S].max().item())  # max over the safe set
+            list_ub_con_1.append(cube.ucb_con_1[cube.S].max().item())  # max over the safe set
+            if t==iterations:
+                break  # no need to do the last. Have 30 in total.
             x_new = acquisition_function(cube=cube)
             if x_new != None:
-                y_new_reward = torch.tensor(gt_reward.conduct_experiment(x=x_new), dtype=torch.float32)
-                y_new_constraint = torch.tensor(gt_constraint.conduct_experiment(x=x_new), dtype=torch.float32)
+                # Stop if the acquisition proposes a point that has already been sampled.
+                already_sampled = torch.any(torch.all(torch.isclose(X_sample, x_new.unsqueeze(0)), dim=1))
+                if already_sampled:
+                    print('Stopping: acquisition proposed an already sampled point.')
+                    break
+                y_new_reward, y_new_constraint_1, y_new_constraint_2, _, _ = gt_furuta.conduct_experiment(x_new)
             else:
                 print('Done!')
                 break
             Y_sample_reward = torch.cat((Y_sample_reward, y_new_reward), dim=0)
-            Y_sample_constraint = torch.cat((Y_sample_constraint, y_new_constraint), dim=0)
+            Y_sample_constraint_1 = torch.cat((Y_sample_constraint_1, y_new_constraint_1), dim=0)
+            Y_sample_constraint_2 = torch.cat((Y_sample_constraint_2, y_new_constraint_2), dim=0)
             X_sample = torch.cat((X_sample, x_new.unsqueeze(0)), dim=0)
             cube.x_sample = X_sample
+            cube.Y_sample_reward = Y_sample_reward
+            cube.Y_sample_constraint_1 = Y_sample_constraint_1
+            cube.Y_sample_constraint_2 = Y_sample_constraint_2
+            if t==1:
+                cube.lcb_rew_init = lb_rew
+                cube.ucb_rew_init = ub_rew
+                cube.lcb_con_1_init = lb_con_1
+                cube.ucb_con_1_init = ub_con_1
+                cube.lcb_con_2_init = lb_con_2
+                cube.ucb_con_2_init = ub_con_2
+
+        cube.list_lb_rew = list_lb_rew
+        cube.list_lb_con_1 = list_lb_con_1
+        cube.list_lb_con_2 = list_lb_con_2
+        cube.list_ub_rew = list_ub_rew
+        cube.list_ub_con_1 = list_ub_con_1
+        cube.list_ub_con_2 = list_ub_con_2
         print(123)
+        # dill.dump(cube, open("cube.pkl", "wb"))
+        # Plot alpha and theta
 
 
 
 
-
-
-"""
-
-
-
-"""

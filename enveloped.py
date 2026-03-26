@@ -57,7 +57,7 @@ def epsilon_wait_and_judge(s, num_scenario, beta, tol=1e-10, max_iter=200):
     if not (flo > 0 and fhi < 0):
         # Return a reasonable default: either 0 (no epsilon needed) or 1 (full epsilon)
         # If both same sign, likely degenerate case - return minimal epsilon
-        warnings.warn("Returning default epsilon=0.0 due to lack of proper bracketing in bisection method.")
+        # warnings.warn("Returning default epsilon=0.0 due to lack of proper bracketing in bisection method.")
         return 0.0
     
     for _ in range(max_iter):
@@ -157,59 +157,13 @@ def create_random_functions(coeff_distribution, Gaussian_std, X_plot, kernel, X_
 
     y_interpol = Y_sample  # still interpolation, no noise
     # Compare each sample point against each grid point across all coordinates.
-    mask = (X_plot.unsqueeze(1) == X_sample.unsqueeze(0)).all(dim=2)  # shape [n, m]
-    interpolation_indices = mask.int().argmax(dim=0).tolist()
-
-    if wj is True:
-        s = 1  # init
-        epsilon_iterative = np.inf
-        while epsilon_iterative >= gamma_confidence:
-            m_functions = m_wait_and_judge(s=s, epsilon=gamma_confidence, beta=kappa_confidence, max_m=20000, tol=1e-10, max_iter=200)
-            tensor_random_functions = torch.zeros([m_functions, len(X_plot)])
-            A = ONB[interpolation_indices, :]
-            G = A @ A.T
-            noise_matrix = torch.zeros([len(y_interpol), m_functions])
-            xi0_matrix = torch.zeros([ONB.shape[1], m_functions], dtype=ONB.dtype, device=ONB.device)
-            
-            for j in range(m_functions):
-                noise = generate_noise(noise_type, R, len(y_interpol), X_sample if noise_type == "heteroscedastic" else None)
-                noise_matrix[:, j] = noise
-                xi0 = sample_coefficients(coeff_distribution, ONB, Gaussian_std)
-                xi0_matrix[:, j] = xi0
-            y = y_interpol.unsqueeze(1) - noise_matrix  
-            jitter = 5e-2  # needs to go up if xi goes up
-
-            
-            res = y - (A @ xi0_matrix)
-            alpha = torch.linalg.solve(G + jitter*torch.eye(G.shape[0], device=G.device, dtype=G.dtype), res)
-            xi0_matrix = xi0_matrix + A.T @ alpha
-            # random_function = (ONB * xi).sum(dim=1)
-            # tensor_random_functions[j, :] = random_function.flatten()
-            tensor_random_functions = (ONB @ xi0_matrix).T
-            ub, argmax = torch.max(tensor_random_functions, dim=0)
-            lb, argmin = torch.min(tensor_random_functions, dim=0)
-            support = torch.unique(torch.cat([argmax, argmin], dim=0))
-            s = support.numel()
-            epsilon_iterative = epsilon_wait_and_judge(s, m_functions, beta=6*kappa_confidence/(np.pi**2*t**2), tol=1e-10)
-
-    elif wj is False:
-        # Determine m_functions directly via classic scenario approach
-        high = 100  # init
-        while True:
-            lhs = binom.cdf(2*N-1, high, gamma_confidence)
-            if lhs > 6*kappa_confidence/(np.pi**2*t**2):
-                low = high
-                high *= 2
-            else:  # m_function_new is large enough, m_functions_old is not, so we can do binary search between them
-                break
-        while low + 1 < high:
-            mid = (low + high) // 2
-            lhs = binom.cdf(2*N-1, mid, gamma_confidence)
-            if lhs > 6*kappa_confidence/(np.pi**2*t**2):
-                low = mid
-            else:
-                high = mid
-        m_functions = high
+    dist = torch.cdist(X_plot, X_sample)  # (10000, 2)
+    interpolation_indices = dist.argmin(dim=0).tolist()                          
+    # WJ is True
+    s = 1  # init
+    epsilon_iterative = np.inf
+    while epsilon_iterative >= gamma_confidence:
+        m_functions = m_wait_and_judge(s=s, epsilon=gamma_confidence, beta=kappa_confidence, max_m=20000, tol=1e-10, max_iter=200)
         tensor_random_functions = torch.zeros([m_functions, len(X_plot)])
         A = ONB[interpolation_indices, :]
         G = A @ A.T
@@ -235,8 +189,7 @@ def create_random_functions(coeff_distribution, Gaussian_std, X_plot, kernel, X_
         lb, argmin = torch.min(tensor_random_functions, dim=0)
         support = torch.unique(torch.cat([argmax, argmin], dim=0))
         s = support.numel()
-
-
+        epsilon_iterative = epsilon_wait_and_judge(s, m_functions, beta=6*kappa_confidence/(np.pi**2*t**2), tol=1e-10)
 
     return lb, ub, argmin, argmax, tensor_random_functions, support
 

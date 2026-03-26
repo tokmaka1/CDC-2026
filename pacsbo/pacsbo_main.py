@@ -45,13 +45,21 @@ def initial_safe_samples(gt, num_safe_points, X_plot, R, safety_threshold):
 
 
 class PACSBO():
-    def __init__(self, X_plot, X_sample, safety_threshold):
+    def __init__(self, X_plot, X_sample, Y_sample_reward, Y_sample_constraint_1, Y_sample_constraint_2, safety_threshold):
         # self.gt = gt  # at least for toy experiments it works like this.
         self.discr_domain = X_plot
+        self.Y_sample_reward = Y_sample_reward
+        self.Y_sample_constraint_1 = Y_sample_constraint_1
+        self.Y_sample_constraint_2 = Y_sample_constraint_2
         self.n_dimensions = X_plot.shape[1]
         self.safety_threshold = safety_threshold
         self.x_sample = X_sample.clone().detach()
-        self.S = (self.discr_domain==self.x_sample).all(dim=1)
+        # index = torch.argmin(torch.abs(self.discr_domain - self.x_sample).sum(dim=1))
+        dist = torch.cdist(self.discr_domain, self.x_sample)  # (10000, 2)
+        interpolation_indices = dist.argmin(dim=0).tolist()
+        self.S = torch.zeros(self.discr_domain.shape[0], dtype=torch.bool)
+        self.S[interpolation_indices] = True  # start with the safe samples as the initial safe set; this is a bit of a hack but it works for now. We can also compute the safe set from the initial samples, but this is easier to implement for now.
+        # self.S = (self.discr_domain == self.discr_domain[interpolation_indices]).all(dim=1)
         if sum(self.S) == 0:
             raise Exception("Safe set is empty")
 
@@ -60,7 +68,8 @@ class PACSBO():
     def compute_safe_set(self):
         # Safe set is defined as all points whose current lower confidence bound
         # is above the safety threshold (i.e., probabilistically safe).
-        self.S = self.lcb_con > self.safety_threshold
+        self.S = torch.min(self.lcb_con_1, self.lcb_con_2) > self.safety_threshold
+        # self.S2 = self.lcb_con_2 > self.safety_threshold
 
         # Auxiliary objects of potential maximizers M and potential expanders G
         self.G = self.S.clone()
@@ -86,7 +95,7 @@ class PACSBO():
         # candidate safe points that are not maximizers and still uncertain enough in constraint model
         safe_non_max = torch.logical_and(
             torch.logical_and(self.S, ~self.M),
-            (self.ucb_con - self.lcb_con) > self.max_M_var,
+            torch.maximum(self.ucb_con_1 - self.lcb_con_1, self.ucb_con_2 - self.lcb_con_2) > self.max_M_var,  # just one of them is fine
         )
         if not torch.any(safe_non_max):
             return

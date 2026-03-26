@@ -48,18 +48,22 @@ class ground_truth_Furuta():
             i = 0
             theta_max = -np.inf
             alpha_max = -np.inf
+            theta_list = []
+            alpha_list = []
             while i < 1000:
                 if upright:
                     if np.abs(self.state[1]) < math.pi/2 and i % self.freq_div == 0:
                         action = np.dot(np.dot(self.k_scale, param.flatten()), self.state)
                     elif np.abs(self.state[1]) >= math.pi/2:
                         action = np.array([0.0])
-                        print("failed during regular SafeOpt")  # why though?
+                        # print("failed during regular SafeOpt")  # why though?
                     self.state, rew, _, _ = env.step(action.flatten())
                     reward += rew
                     i += 1
                     # print(self.state)
                     theta, alpha, theta_dot, alpha_dot = self.state
+                    theta_list.append(theta)
+                    alpha_list.append(alpha)
                     if np.abs(theta) > theta_max:
                         theta_max = np.abs(theta)
                     if np.abs(alpha) > alpha_max:
@@ -68,13 +72,17 @@ class ground_truth_Furuta():
                     action = swing_up_ctrl.action(self.state)*1.4
                     self.state, _, _, _ = env.step(action)
                     if not self.use_simulator:
+                        pass
                         print(np.linalg.norm(self.state))
-                    if np.linalg.norm(self.state) < 5e-2:
+                    if np.linalg.norm(self.state) < 8e-2:
                         print("swingup completed")
                         upright = True
-            constraint = math.pi/2 - max(alpha_max, theta_max)  # - math.pi/2, theta_max - math.pi/2)
-            print(f'Experiment done. For the parameter {x}, we received the reward {(reward/1000)} and the constraint value {constraint}')
-        return torch.tensor([reward/1000, constraint], dtype=torch.float32)
+            constraint_1 = math.pi/2 - theta_max    # - math.pi/2, theta_max - math.pi/2)
+            constraint_2 = math.pi/4 - alpha_max  #  also works. But this is safer if optimization is possible.
+            # Box angle up to 80 degrees
+            # Other angle up to 10 degrees
+            print(f'Experiment done. For the parameter {x}, we received the reward {(reward/1000)} and the min constraint value {min(constraint_1,constraint_2)}')
+        return torch.tensor([reward/1000], dtype=torch.float32), torch.tensor([constraint_1],dtype=torch.float32), torch.tensor([constraint_2],dtype=torch.float32), alpha_list, theta_list
 
     def try_furuta_real(self, param):
         param = np.asarray(param, dtype=np.float64).flatten()
@@ -111,6 +119,6 @@ class ground_truth_Furuta():
                     action = swing_up_ctrl.action(state)*1.4
                     state, _, _, _ = env.step(action)
                     print(np.linalg.norm(state))
-                    if np.linalg.norm(state) < 5e-2:
+                    if np.linalg.norm(state) < 8e-2:  # 5e-2:
                         upright = True
         return torch.tensor([reward/1000], dtype=torch.float32)
