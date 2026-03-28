@@ -81,17 +81,34 @@ def bspline_basis_repeated(x, N, M=1000, degree=3):
     return Phi  # shape: (len(x), N)
 
 
+def polynomial_basis_1d_scaled(x, p, decay_power=3):
+    x = x.view(-1, 1)
+
+    # T(x) = a0 + sum_{n=1}^{p-1} c_n (cos(nx) + sin(nx)) with c_n shared,
+    # which corresponds to enforcing a_n = b_n.
+    # Spectral decay damps high-frequency modes to reduce visual noisiness.
+    Phi = torch.empty((x.shape[0], p), dtype=x.dtype, device=x.device)
+    Phi[:, 0] = 1.0
+    if p > 1:
+        n = torch.arange(1, p, device=x.device, dtype=x.dtype).view(1, -1)
+        # Phi[:, 1:] = (torch.cos(2*np.pi*x*(p-n)/500) + 0*torch.sin(2*np.pi*x)) # / (n ** decay_power)
+        Phi[:, 1:] = (torch.cos(2*np.pi*x*n/400))   # / (n ** decay_power)
+    return Phi
+
+
+"""
 def polynomial_basis_1d_scaled(x, p):
     x = x.view(-1, 1)
 
     c = torch.linspace(0.1, 10.0, p, device=x.device)  # equidistant c_k
     a_pow = x ** c.view(1, -1)
     k = torch.arange(p, device=x.device).float()
-    omega = 2 * torch.pi * (1 + 0.001*k)
+    omega = 2 * torch.pi  # * (1 + 0.001*k)
     Phi = torch.sin(omega * a_pow)
     Phi[:, 0] = 1.0  # replace first column
-
     return Phi
+"""
+
 def haar_wavelet(n, x):
     """Evaluate the n-th Haar wavelet at points x ∈ [0,1]."""
     x = x.reshape(-1)

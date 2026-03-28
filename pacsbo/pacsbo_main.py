@@ -66,7 +66,7 @@ def compute_X_plot(n_dimensions, points_per_axis, beginning=0, end=1):
 def initial_safe_samples(gt, num_safe_points, X_plot, R, safety_threshold):
     num_safe_points = num_safe_points
     # sampling_logic = torch.logical_and(gt.fX > torch.quantile(gt.fX, 0.55), gt.fX < torch.quantile(gt.fX, 0.65))  # Student t
-    sampling_logic = torch.logical_and(gt.fX > torch.quantile(gt.fX, 0.75), gt.fX < torch.quantile(gt.fX, 0.85))  # Student t
+    sampling_logic = torch.logical_and(gt.fX > torch.quantile(gt.fX, 0.45), gt.fX < torch.quantile(gt.fX, 0.5))  # Student t
     random_indices_sample = torch.randint(high=X_plot[sampling_logic].shape[0], size=(num_safe_points,))
     X_sample = X_plot[sampling_logic][random_indices_sample]
     # Y_sample = fX[sampling_logic][random_indices_sample] + gt.noise(eta)  # + torch.tensor(np.random.normal(loc=0, scale=noise_std, size=X_sample.shape[0]), dtype=torch.float32)

@@ -12,7 +12,7 @@ import copy
 import tikzplotlib
 import os
 
-random_seed_number = 10
+random_seed_number = 500
 np.random.seed(random_seed_number)
 torch.manual_seed(random_seed_number)
 
@@ -157,7 +157,7 @@ if __name__ == '__main__':
         noise_type = "uniform"  # Student-t, Gaussian, uniform, heteroscedastic
         iterations = 30
         eta = 1e-4
-        R =  1e-3 # 5e-3  # 1e-2  #  # 5e-3  # for noise in the observations
+        R =  1e-1 # 5e-3  # 1e-2  #  # 5e-3  # for noise in the observations
         delta_confidence = 0.1      
         bar_epsilon_tensor = torch.tensor([])
         coeff_distribution = "Gaussian"  # Options: Gaussian, uniform, Fourier_decay, Student t
@@ -177,7 +177,7 @@ if __name__ == '__main__':
         X_plot = compute_X_plot(n_dimensions=1, points_per_axis=1000)
         number_of_KL_terms = len(X_plot)
         gt = ground_truth(coeff_distribution, Gaussian_std=Gaussian_std, X_plot=X_plot, basis_functions=basis_functions, kernel=kernel, lengthscale=lengthscale, noise_type=noise_type, R=R)   
-        safety_threshold = torch.quantile(gt.fX, 0.4).item() 
+        safety_threshold = torch.quantile(gt.fX, 0.2).item() 
         X_sample_init, Y_sample_init = initial_safe_samples(gt, num_safe_points=1, X_plot=X_plot, R=R, safety_threshold=safety_threshold)
         X_sample = X_sample_init.clone()
         Y_sample = Y_sample_init.clone()
