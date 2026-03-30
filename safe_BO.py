@@ -153,7 +153,7 @@ def plot(cube, gt, tensor_random_functions, support, plot_support=True, save=Fal
 
 
 if __name__ == '__main__':
-        introductory_example = True  # Section 4; toy example to compare classic scenario theory with wait and judge
+        introductory_example = False  # Section 4; toy example to compare classic scenario theory with wait and judge
         noise_type = "uniform"  # Student-t, Gaussian, uniform, heteroscedastic
         iterations = 30
         eta = 1e-4
@@ -215,7 +215,7 @@ if __name__ == '__main__':
             plot(cube, gt, tensor_random_functions, support, plot_support=True, save=False, title="numerical_example_end.tex", t=t) 
 
         elif introductory_example:
-                step = 1  # Plot every 5th point to reduce file size; adjust as needed
+                step = 8  # Plot every 5th point to reduce file size; adjust as needed
                 # idx_init = torch.linspace(0, 20, steps=15, dtype=torch.long)
                 # X_sample = X_plot[idx_init].clone()
                 # Y_sample = torch.stack([
