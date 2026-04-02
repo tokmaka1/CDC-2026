@@ -11,14 +11,14 @@ Abdullah Tokmak, Toni Karvonen, Thomas B. Schön, Dominik Baumann
 
 ## Overview
 
-This project introduces **function-based uncertainty quantification (UQ)** for safe learning-based control. The core idea is to model the unknown function as a random function from which i.i.d. realizations can be sampled, and to construct **high-probability uncertainty tubes** using the scenario approach. :contentReference[oaicite:0]{index=0}
+This project introduces **function-based uncertainty quantification (UQ)** for safe learning-based control. The core idea is to model the unknown function as a random function from which i.i.d. realizations can be sampled, and to construct **high-probability uncertainty tubes** using the scenario approach. 
 
 These uncertainty tubes:
 - do **not** require RKHS norm bounds or Lipschitz constants
 - accommodate **general noise models**, including heavy-tailed and heteroscedastic noise 
 - support **flexible function classes**, including discontinuous functions 
 
-The resulting framework is integrated into a **safe Bayesian optimization (BO)** algorithm for control parameter tuning. :contentReference[oaicite:1]{index=1}
+The resulting framework is integrated into a **safe Bayesian optimization (BO)** algorithm for control parameter tuning.
 
 ---
 
@@ -35,10 +35,10 @@ The resulting framework is integrated into a **safe Bayesian optimization (BO)**
 ## Key Idea
 
 We construct uncertainty tubes of the form  
-\(
+$$
 \mathbb{P}\big[h(a) \in [\ell_t(a), u_t(a)] \ \forall a \in \mathcal{A}\big] \geq 1 - \nu
-\)  
-by sampling function realizations and applying the **scenario approach**. :contentReference[oaicite:2]{index=2}
+$$
+by sampling function realizations and applying the **scenario approach**. 
 
 These tubes are:
 - **data-consistent** via projection onto observed data  
