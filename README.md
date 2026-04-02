@@ -14,9 +14,9 @@ Abdullah Tokmak, Toni Karvonen, Thomas B. Schön, Dominik Baumann
 This project introduces **function-based uncertainty quantification (UQ)** for safe learning-based control. The core idea is to model the unknown function as a random function from which i.i.d. realizations can be sampled, and to construct **high-probability uncertainty tubes** using the scenario approach. :contentReference[oaicite:0]{index=0}
 
 These uncertainty tubes:
-- do **not** require RKHS norm bounds or Lipschitz constants (0.95)
-- accommodate **general noise models**, including heavy-tailed and heteroscedastic noise (1.00)
-- support **flexible function classes**, including discontinuous functions (1.00)
+- do **not** require RKHS norm bounds or Lipschitz constants
+- accommodate **general noise models**, including heavy-tailed and heteroscedastic noise 
+- support **flexible function classes**, including discontinuous functions 
 
 The resulting framework is integrated into a **safe Bayesian optimization (BO)** algorithm for control parameter tuning. :contentReference[oaicite:1]{index=1}
 
